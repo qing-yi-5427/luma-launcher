@@ -19,12 +19,15 @@ public sealed partial class MainWindow : Window
     private readonly SettingsStore _settings;
     private readonly HotkeyService _hotkey = new();
     private CancellationTokenSource? _searchCancellation;
+    private CancellationTokenSource? _idleMaintenanceCancellation;
     private HwndSource? _source;
     private HotkeyRegistration? _registration;
     private long _searchGeneration;
     private bool _allowClose;
     private bool _contextMenuOpen;
     private DateTimeOffset _ignoreDeactivateUntil;
+
+    internal Func<int, IntPtr, IntPtr, bool>? TrayMessageHandler { get; set; }
 
     public MainWindow(SettingsStore settings)
     {
@@ -43,7 +46,7 @@ public sealed partial class MainWindow : Window
     public HotkeyRegistration InitializeLauncher()
     {
         new WindowInteropHelper(this).EnsureHandle();
-        _ = _search.InitializeAsync();
+        _ = InitializeSearchAsync();
         _registration ??= new HotkeyRegistration(_settings.Current.Hotkey, "未注册", true, 0);
         return _registration;
     }
@@ -52,7 +55,7 @@ public sealed partial class MainWindow : Window
     {
         ThemeService.Apply(_settings.Current.Theme);
         _search.ConfigureEverything(_settings.Current);
-        _ = _search.EnsureEverythingRunningAsync();
+        _ = EnsureEverythingRunningAsync();
         if (_source is null)
             return;
         _registration = _hotkey.Register(_source.Handle, _settings.Current.Hotkey);
@@ -62,9 +65,29 @@ public sealed partial class MainWindow : Window
 
     public async Task ReloadAppsAsync()
     {
-        StatusText.Text = "正在重建应用索引…";
-        await _search.ReloadAppsAsync();
-        StatusText.Text = "应用索引已更新";
+        try
+        {
+            StatusText.Text = "正在重建应用索引…";
+            await _search.ReloadAppsAsync();
+            StatusText.Text = "应用索引已更新";
+        }
+        catch (Exception exception)
+        {
+            DiagnosticsService.Log("app-index-reload", exception);
+            StatusText.Text = "应用索引更新失败";
+        }
+    }
+
+    private async Task InitializeSearchAsync()
+    {
+        try { await _search.InitializeAsync(); }
+        catch (Exception exception) { DiagnosticsService.Log("search-initialize", exception); }
+    }
+
+    private async Task EnsureEverythingRunningAsync()
+    {
+        try { await _search.EnsureEverythingRunningAsync(); }
+        catch (Exception exception) { DiagnosticsService.Log("everything-initialize", exception); }
     }
 
     public void ToggleLauncher()
@@ -83,6 +106,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        _idleMaintenanceCancellation?.Cancel();
         Show();
         _ignoreDeactivateUntil = DateTimeOffset.UtcNow.AddMilliseconds(900);
         WindowState = WindowState.Normal;
@@ -104,13 +128,26 @@ public sealed partial class MainWindow : Window
         ScheduleIdleTrim();
     }
 
-    internal void ScheduleIdleTrim() => _ = TrimWorkingSetWhenIdleAsync();
-
-    private async Task TrimWorkingSetWhenIdleAsync()
+    internal void ScheduleIdleTrim()
     {
-        await Task.Delay(1600);
-        if (!IsVisible)
-            NativeMethods.EmptyWorkingSet(System.Diagnostics.Process.GetCurrentProcess().Handle);
+        _idleMaintenanceCancellation?.Cancel();
+        _idleMaintenanceCancellation?.Dispose();
+        _idleMaintenanceCancellation = new CancellationTokenSource();
+        _ = TrimWorkingSetWhenIdleAsync(_idleMaintenanceCancellation.Token);
+    }
+
+    private async Task TrimWorkingSetWhenIdleAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(5000, token);
+            if (IsVisible || token.IsCancellationRequested)
+                return;
+            _search.TrimCaches();
+            using var process = System.Diagnostics.Process.GetCurrentProcess();
+            NativeMethods.EmptyWorkingSet(process.Handle);
+        }
+        catch (OperationCanceledException) { }
     }
 
     public void OpenSettings() => SettingsRequested?.Invoke();
@@ -135,6 +172,12 @@ public sealed partial class MainWindow : Window
 
     private IntPtr WindowProcedure(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (TrayMessageHandler?.Invoke(message, wParam, lParam) == true)
+        {
+            handled = true;
+            return IntPtr.Zero;
+        }
+
         if (_hotkey.IsHotkeyMessage(message, wParam))
         {
             ToggleLauncher();
@@ -158,7 +201,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        SetExpanded(true);
+        SetExpanded(0, showBody: true);
         _results.Clear();
         EmptyText.Text = "正在搜索…";
         EmptyText.Visibility = Visibility.Visible;
@@ -173,11 +216,15 @@ public sealed partial class MainWindow : Window
             if (generation != _searchGeneration || !query.Equals(SearchBox.Text.Trim(), StringComparison.Ordinal))
                 return;
             ApplyBatch(batch, "没有找到匹配项");
+            SetExpanded(batch.Results.Count, showBody: true);
+            _ = LoadIconsAsync(batch.Results, generation, token);
         }
         catch (OperationCanceledException) { }
         catch (Exception exception) when (generation == _searchGeneration)
         {
-            ApplyBatch(new SearchBatch([], "搜索暂时不可用", false), exception.Message);
+            DiagnosticsService.Log("search", exception);
+            ApplyBatch(new SearchBatch([], "搜索暂时不可用", false), "搜索暂时不可用，请稍后重试");
+            SetExpanded(0, showBody: true);
         }
     }
 
@@ -191,7 +238,8 @@ public sealed partial class MainWindow : Window
             if (generation != _searchGeneration || SearchBox.Text.Length != 0)
                 return;
             ApplyBatch(batch, "输入应用、文件名或 Everything 语法");
-            SetExpanded(batch.Results.Count > 0);
+            SetExpanded(batch.Results.Count, batch.Results.Count > 0);
+            _ = LoadIconsAsync(batch.Results, generation, token);
         }
         catch (OperationCanceledException) { }
     }
@@ -208,13 +256,37 @@ public sealed partial class MainWindow : Window
         StatusText.Text = batch.StatusText;
     }
 
-    private void SetExpanded(bool expanded)
+    private async Task LoadIconsAsync(IReadOnlyList<LauncherResult> results, long generation, CancellationToken token)
     {
-        ResultsRow.Height = new GridLength(expanded ? 1 : 0, expanded ? GridUnitType.Star : GridUnitType.Pixel);
-        FooterRow.Height = new GridLength(expanded ? 38 : 0);
-        ResultsHost.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
-        Footer.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
-        var animation = new DoubleAnimation(expanded ? ExpandedHeight : CompactHeight, TimeSpan.FromMilliseconds(135))
+        if (results.Count == 0)
+            return;
+        try
+        {
+            var icons = await _search.LoadIconsAsync(results, token);
+            if (generation != _searchGeneration || token.IsCancellationRequested)
+                return;
+            for (var index = 0; index < results.Count; index++)
+                results[index].Icon = icons[index];
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception) { DiagnosticsService.Log("icon-hydration", exception); }
+    }
+
+    private void SetExpanded(int resultCount, bool showBody)
+    {
+        ResultsRow.Height = new GridLength(showBody ? 1 : 0, showBody ? GridUnitType.Star : GridUnitType.Pixel);
+        FooterRow.Height = new GridLength(showBody ? 38 : 0);
+        ResultsHost.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
+        Footer.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
+        var resultArea = resultCount > 0 ? Math.Min(8, resultCount) * 48 + 8 : 92;
+        var targetHeight = showBody ? Math.Min(ExpandedHeight, CompactHeight + resultArea + 38) : CompactHeight;
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            BeginAnimation(HeightProperty, null);
+            Height = targetHeight;
+            return;
+        }
+        var animation = new DoubleAnimation(targetHeight, TimeSpan.FromMilliseconds(135))
         {
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
@@ -223,6 +295,12 @@ public sealed partial class MainWindow : Window
 
     private void AnimateShow()
     {
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            Opacity = 1;
+            WindowTranslate.Y = 0;
+            return;
+        }
         Opacity = 0.94;
         WindowTranslate.Y = -5;
         BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(115)));
@@ -233,13 +311,15 @@ public sealed partial class MainWindow : Window
     private void PositionOnCursorMonitor()
     {
         var handle = new WindowInteropHelper(this).Handle;
-        var cursor = System.Windows.Forms.Cursor.Position;
-        var area = System.Windows.Forms.Screen.FromPoint(cursor).WorkingArea;
+        if (!NativeMethods.TryGetCursorWorkArea(out var area))
+            return;
         if (!NativeMethods.GetWindowRect(handle, out var rectangle))
             return;
         var windowWidth = rectangle.Right - rectangle.Left;
-        var x = area.Left + (area.Width - windowWidth) / 2;
-        var y = area.Top + Math.Max(42, (int)(area.Height * 0.13));
+        var areaWidth = area.Right - area.Left;
+        var areaHeight = area.Bottom - area.Top;
+        var x = area.Left + (areaWidth - windowWidth) / 2;
+        var y = area.Top + Math.Max(42, (int)(areaHeight * 0.13));
         NativeMethods.SetWindowPos(handle, IntPtr.Zero, x, y, 0, 0,
             NativeMethods.SwpNoSize | NativeMethods.SwpNoZOrder | NativeMethods.SwpNoActivate);
     }
@@ -401,6 +481,8 @@ public sealed partial class MainWindow : Window
 
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
+        _idleMaintenanceCancellation?.Cancel();
+        _idleMaintenanceCancellation?.Dispose();
         _searchCancellation?.Cancel();
         _searchCancellation?.Dispose();
         _search.Dispose();

@@ -36,15 +36,25 @@ public sealed partial class SettingsWindow : Window
             return;
         }
 
-        SettingsSaved?.Invoke(new AppSettings
+        var settings = new AppSettings
         {
             Hotkey = HotkeyBox.SelectedValue as string ?? "Alt+Space",
             Theme = ThemeBox.SelectedValue as string ?? "System",
             StartWithWindows = StartupBox.IsChecked == true,
             EverythingPathMode = everythingMode,
             EverythingPath = everythingPath
-        });
-        Close();
+        };
+        try
+        {
+            SettingsSaved?.Invoke(settings);
+            Close();
+        }
+        catch (Exception exception)
+        {
+            DiagnosticsService.Log("settings-save", exception);
+            EverythingPathHint.Text = "设置保存失败，请稍后重试。";
+            EverythingPathHint.SetResourceReference(ForegroundProperty, "AccentBrush");
+        }
     }
 
     private void EverythingMode_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)

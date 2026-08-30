@@ -20,9 +20,7 @@ public sealed class SettingsStore
 
     public void Save(AppSettings settings)
     {
-        var temporaryPath = _path + ".tmp";
-        File.WriteAllText(temporaryPath, JsonSerializer.Serialize(settings, JsonOptions));
-        File.Move(temporaryPath, _path, true);
+        AtomicFileService.WriteAllText(_path, JsonSerializer.Serialize(settings, JsonOptions));
         Current = settings.Copy();
     }
 
@@ -31,11 +29,13 @@ public sealed class SettingsStore
         try
         {
             return File.Exists(_path)
-                ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path)) ?? new AppSettings()
+                ? JsonSerializer.Deserialize<AppSettings>(AtomicFileService.ReadAllText(_path)) ?? new AppSettings()
                 : new AppSettings();
         }
-        catch
+        catch (Exception exception)
         {
+            AtomicFileService.PreserveCorruptFile(_path);
+            DiagnosticsService.Log("settings-load", exception);
             return new AppSettings();
         }
     }

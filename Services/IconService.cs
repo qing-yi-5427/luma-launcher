@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -11,15 +10,82 @@ public sealed class IconService
 {
     private const uint ShgfiIcon = 0x000000100;
     private const uint ShgfiSmallIcon = 0x000000001;
-    private readonly ConcurrentDictionary<string, ImageSource?> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private const int MaximumCacheEntries = 192;
+
+    private sealed record CacheEntry(ImageSource? Image, LinkedListNode<string> Node);
+
+    private readonly object _sync = new();
+    private readonly Dictionary<string, CacheEntry> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Task<ImageSource?>> _inflight = new(StringComparer.OrdinalIgnoreCase);
+    private readonly LinkedList<string> _recency = new();
 
     public async Task<ImageSource?> GetAsync(string target, CancellationToken token)
     {
-        if (_cache.TryGetValue(target, out var cached))
-            return cached;
-        var icon = await Task.Run(() => GetIcon(target), token).ConfigureAwait(false);
-        _cache.TryAdd(target, icon);
-        return icon;
+        Task<ImageSource?> loadTask;
+        lock (_sync)
+        {
+            if (_cache.TryGetValue(target, out var cached))
+            {
+                _recency.Remove(cached.Node);
+                _recency.AddFirst(cached.Node);
+                return cached.Image;
+            }
+
+            if (!_inflight.TryGetValue(target, out loadTask!))
+            {
+                loadTask = LoadAndCacheAsync(target);
+                _inflight[target] = loadTask;
+            }
+        }
+
+        return await loadTask.WaitAsync(token).ConfigureAwait(false);
+    }
+
+    public void Trim(int entriesToKeep = 64)
+    {
+        entriesToKeep = Math.Clamp(entriesToKeep, 0, MaximumCacheEntries);
+        lock (_sync)
+        {
+            while (_cache.Count > entriesToKeep && _recency.Last is { } last)
+            {
+                _cache.Remove(last.Value);
+                _recency.RemoveLast();
+            }
+        }
+    }
+
+    internal int CachedCount
+    {
+        get { lock (_sync) return _cache.Count; }
+    }
+
+    private async Task<ImageSource?> LoadAndCacheAsync(string target)
+    {
+        ImageSource? icon = null;
+        try
+        {
+            icon = await Task.Run(() => GetIcon(target)).ConfigureAwait(false);
+            return icon;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            DiagnosticsService.Log("icon", exception);
+            return null;
+        }
+        finally
+        {
+            lock (_sync)
+            {
+                _inflight.Remove(target);
+                var node = _recency.AddFirst(target);
+                _cache[target] = new CacheEntry(icon, node);
+                while (_cache.Count > MaximumCacheEntries && _recency.Last is { } last)
+                {
+                    _cache.Remove(last.Value);
+                    _recency.RemoveLast();
+                }
+            }
+        }
     }
 
     private static ImageSource? GetIcon(string target)

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Win32;
 using LumaLauncher.Models;
 
@@ -5,39 +6,87 @@ namespace LumaLauncher.Services;
 
 public sealed class AppIndexService
 {
-    private sealed record AppEntry(string Title, string Target, string Subtitle);
-    private IReadOnlyList<AppEntry> _entries = [];
+    private const int CacheVersion = 1;
+    private static readonly JsonSerializerOptions CacheJsonOptions = new() { WriteIndented = false };
 
-    public bool IsReady { get; private set; }
-    public int Count => _entries.Count;
+    private sealed class AppEntry
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Target { get; set; } = string.Empty;
+        public string Subtitle { get; set; } = string.Empty;
+        public string NormalizedTitle { get; set; } = string.Empty;
+        public string NormalizedSubtitle { get; set; } = string.Empty;
+    }
+
+    private sealed class AppIndexCache
+    {
+        public int Version { get; set; }
+        public AppEntry[] Entries { get; set; } = [];
+    }
+
+    private readonly string _cachePath;
+    private AppEntry[] _entries;
+    private int _ready;
+
+    public AppIndexService()
+    {
+        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LumaLauncher");
+        Directory.CreateDirectory(directory);
+        _cachePath = Path.Combine(directory, "apps.json");
+        _entries = [];
+    }
+
+    public bool IsReady => Volatile.Read(ref _ready) != 0;
+    public int Count => Volatile.Read(ref _entries).Length;
+
+    public async Task InitializeAsync(CancellationToken token = default)
+    {
+        var cached = await Task.Run(LoadCache, token).ConfigureAwait(false);
+        if (cached.Length > 0)
+        {
+            Volatile.Write(ref _entries, cached);
+            Volatile.Write(ref _ready, 1);
+        }
+        await ReloadAsync(token).ConfigureAwait(false);
+    }
 
     public async Task ReloadAsync(CancellationToken token = default)
     {
         var entries = await Task.Run(() => BuildIndex(token), token).ConfigureAwait(false);
-        _entries = entries;
-        IsReady = true;
+        Volatile.Write(ref _entries, entries);
+        Volatile.Write(ref _ready, 1);
+        await Task.Run(() => SaveCache(entries), CancellationToken.None).ConfigureAwait(false);
     }
 
-    public IReadOnlyList<LauncherResult> Search(string query, int maximumResults, UsageStore usage)
+    public IReadOnlyList<LauncherResult> Search(FuzzyMatcher.PreparedQuery query, int maximumResults, UsageStore usage)
     {
-        return _entries
-            .Select(entry => (Entry: entry, Match: FuzzyMatcher.Score(query, entry.Title, entry.Subtitle)))
-            .Where(item => !double.IsNegativeInfinity(item.Match))
-            .Select(item => new LauncherResult
+        var matches = new List<LauncherResult>(Math.Min(32, Count));
+        foreach (var entry in Volatile.Read(ref _entries))
+        {
+            var match = FuzzyMatcher.Score(query, entry.NormalizedTitle, entry.NormalizedSubtitle);
+            if (double.IsNegativeInfinity(match))
+                continue;
+            matches.Add(new LauncherResult
             {
-                Title = item.Entry.Title,
-                Subtitle = item.Entry.Subtitle,
-                Target = item.Entry.Target,
+                Title = entry.Title,
+                Subtitle = entry.Subtitle,
+                Target = entry.Target,
                 Kind = LauncherResultKind.Application,
-                Score = item.Match + 180 + usage.GetBoost(item.Entry.Target)
-            })
-            .OrderByDescending(result => result.Score)
-            .ThenBy(result => result.Title.Length)
-            .Take(maximumResults)
-            .ToList();
+                Score = match + 180 + usage.GetBoost(entry.Target)
+            });
+        }
+
+        matches.Sort(static (left, right) =>
+        {
+            var score = right.Score.CompareTo(left.Score);
+            return score != 0 ? score : left.Title.Length.CompareTo(right.Title.Length);
+        });
+        if (matches.Count > maximumResults)
+            matches.RemoveRange(maximumResults, matches.Count - maximumResults);
+        return matches;
     }
 
-    private static IReadOnlyList<AppEntry> BuildIndex(CancellationToken token)
+    private static AppEntry[] BuildIndex(CancellationToken token)
     {
         var entries = new Dictionary<string, AppEntry>(StringComparer.OrdinalIgnoreCase);
         AddFolder(entries, Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "开始菜单", recursive: true, token);
@@ -51,18 +100,25 @@ public sealed class AppIndexService
         AddRegistryApps(entries, RegistryHive.CurrentUser, RegistryView.Default, token);
         AddRegistryApps(entries, RegistryHive.LocalMachine, RegistryView.Registry64, token);
         AddRegistryApps(entries, RegistryHive.LocalMachine, RegistryView.Registry32, token);
-        return entries.Values.OrderBy(entry => entry.Title, StringComparer.CurrentCultureIgnoreCase).ToList();
+        return entries.Values.OrderBy(entry => entry.Title, StringComparer.CurrentCultureIgnoreCase).ToArray();
     }
 
-    private static void AddFolder(Dictionary<string, AppEntry> entries, string folder, string source, bool recursive, CancellationToken token, bool executableAliasesOnly = false)
+    private static void AddFolder(Dictionary<string, AppEntry> entries, string folder, string source, bool recursive,
+        CancellationToken token, bool executableAliasesOnly = false)
     {
         if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
             return;
 
         try
         {
-            var option = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-            foreach (var file in Directory.EnumerateFiles(folder, "*", option))
+            var options = new EnumerationOptions
+            {
+                RecurseSubdirectories = recursive,
+                IgnoreInaccessible = true,
+                ReturnSpecialDirectories = false,
+                AttributesToSkip = FileAttributes.System
+            };
+            foreach (var file in Directory.EnumerateFiles(folder, "*", options))
             {
                 token.ThrowIfCancellationRequested();
                 var extension = Path.GetExtension(file);
@@ -78,14 +134,14 @@ public sealed class AppIndexService
                 var title = Path.GetFileNameWithoutExtension(file);
                 if (title.StartsWith("unins", StringComparison.OrdinalIgnoreCase) || title.Contains("卸载", StringComparison.OrdinalIgnoreCase))
                     continue;
-                entries.TryAdd(file, new AppEntry(title, file, source));
+                entries.TryAdd(file, CreateEntry(title, file, source));
             }
         }
-        catch (UnauthorizedAccessException) { }
-        catch (IOException) { }
+        catch (IOException exception) { DiagnosticsService.Log("app-index", exception); }
     }
 
-    private static void AddRegistryApps(Dictionary<string, AppEntry> entries, RegistryHive hive, RegistryView view, CancellationToken token)
+    private static void AddRegistryApps(Dictionary<string, AppEntry> entries, RegistryHive hive, RegistryView view,
+        CancellationToken token)
     {
         try
         {
@@ -104,10 +160,54 @@ public sealed class AppIndexService
                 if (!File.Exists(path))
                     continue;
                 var title = Path.GetFileNameWithoutExtension(name);
-                entries.TryAdd(path, new AppEntry(title, path, "已安装应用"));
+                entries.TryAdd(path, CreateEntry(title, path, "已安装应用"));
             }
         }
-        catch (UnauthorizedAccessException) { }
-        catch (System.Security.SecurityException) { }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        {
+            DiagnosticsService.Log("app-index", exception);
+        }
+    }
+
+    private static AppEntry CreateEntry(string title, string target, string subtitle) => new()
+    {
+        Title = title,
+        Target = target,
+        Subtitle = subtitle,
+        NormalizedTitle = FuzzyMatcher.PrepareCandidate(title),
+        NormalizedSubtitle = FuzzyMatcher.PrepareCandidate(subtitle)
+    };
+
+    private AppEntry[] LoadCache()
+    {
+        try
+        {
+            if (!File.Exists(_cachePath))
+                return [];
+            var cache = JsonSerializer.Deserialize<AppIndexCache>(AtomicFileService.ReadAllText(_cachePath), CacheJsonOptions);
+            if (cache?.Version != CacheVersion)
+                return [];
+            return cache.Entries
+                .Where(entry => !string.IsNullOrWhiteSpace(entry.Title) && !string.IsNullOrWhiteSpace(entry.Target))
+                .ToArray();
+        }
+        catch (Exception exception)
+        {
+            DiagnosticsService.Log("app-cache-load", exception);
+            return [];
+        }
+    }
+
+    private void SaveCache(AppEntry[] entries)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(new AppIndexCache { Version = CacheVersion, Entries = entries }, CacheJsonOptions);
+            AtomicFileService.WriteAllText(_cachePath, json);
+        }
+        catch (Exception exception)
+        {
+            DiagnosticsService.Log("app-cache-save", exception);
+        }
     }
 }

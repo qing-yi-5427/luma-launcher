@@ -9,6 +9,7 @@ public sealed class InstanceCoordinator : IDisposable
     private readonly CancellationTokenSource _cancellation = new();
     private readonly Task? _waitTask;
     private readonly bool _ownsMutex;
+    private int _pendingActivation;
 
     public InstanceCoordinator()
     {
@@ -27,19 +28,28 @@ public sealed class InstanceCoordinator : IDisposable
 
     private void WaitLoop()
     {
-        var handles = new WaitHandle[] { _activationEvent, _cancellation.Token.WaitHandle };
+        var handles = new WaitHandle[] { _cancellation.Token.WaitHandle, _activationEvent };
         while (!_cancellation.IsCancellationRequested)
         {
-            if (WaitHandle.WaitAny(handles) != 0)
+            if (WaitHandle.WaitAny(handles) != 1)
                 break;
-            ActivationRequested?.Invoke();
+            var handler = ActivationRequested;
+            if (handler is null)
+                Interlocked.Exchange(ref _pendingActivation, 1);
+            else
+                handler();
         }
+    }
+
+    public void DrainPendingActivation()
+    {
+        if (Interlocked.Exchange(ref _pendingActivation, 0) != 0)
+            ActivationRequested?.Invoke();
     }
 
     public void Dispose()
     {
         _cancellation.Cancel();
-        _activationEvent.Set();
         try { _waitTask?.Wait(TimeSpan.FromSeconds(1)); } catch { }
         if (_ownsMutex)
             _mutex.ReleaseMutex();

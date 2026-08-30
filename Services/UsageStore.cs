@@ -40,22 +40,31 @@ public sealed class UsageStore
 
     public IReadOnlyList<LauncherResult> GetRecent(int limit)
     {
+        UsageEntry[] recent;
         lock (_sync)
         {
-            return _entries.Values
-                .Where(entry => IsTargetAvailable(entry.Target))
+            recent = _entries.Values
                 .OrderByDescending(entry => entry.LastUsedUtc)
-                .Take(limit)
-                .Select(entry => new LauncherResult
-                {
-                    Title = entry.Title,
-                    Subtitle = entry.Subtitle,
-                    Target = entry.Target,
-                    Kind = entry.Kind,
-                    Score = 1000 + GetBoost(entry.Target)
-                })
-                .ToList();
+                .ToArray();
         }
+
+        var results = new List<LauncherResult>(limit);
+        foreach (var entry in recent)
+        {
+            if (!IsTargetAvailable(entry.Target))
+                continue;
+            results.Add(new LauncherResult
+            {
+                Title = entry.Title,
+                Subtitle = entry.Subtitle,
+                Target = entry.Target,
+                Kind = entry.Kind,
+                Score = 1000 + GetBoost(entry.Target)
+            });
+            if (results.Count == limit)
+                break;
+        }
+        return results;
     }
 
     public void Record(LauncherResult result)
@@ -72,7 +81,8 @@ public sealed class UsageStore
             entry.Kind = result.Kind;
             entry.Count++;
             entry.LastUsedUtc = DateTime.UtcNow;
-            Save();
+            try { Save(); }
+            catch (Exception exception) { DiagnosticsService.Log("usage-save", exception); }
         }
     }
 
@@ -81,20 +91,20 @@ public sealed class UsageStore
         try
         {
             return File.Exists(_path)
-                ? JsonSerializer.Deserialize<Dictionary<string, UsageEntry>>(File.ReadAllText(_path)) ?? NewDictionary()
+                ? JsonSerializer.Deserialize<Dictionary<string, UsageEntry>>(AtomicFileService.ReadAllText(_path)) ?? NewDictionary()
                 : NewDictionary();
         }
-        catch
+        catch (Exception exception)
         {
+            AtomicFileService.PreserveCorruptFile(_path);
+            DiagnosticsService.Log("usage-load", exception);
             return NewDictionary();
         }
     }
 
     private void Save()
     {
-        var temporary = _path + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(_entries));
-        File.Move(temporary, _path, true);
+        AtomicFileService.WriteAllText(_path, JsonSerializer.Serialize(_entries));
     }
 
     private static Dictionary<string, UsageEntry> NewDictionary() => new(StringComparer.OrdinalIgnoreCase);

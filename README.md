@@ -12,8 +12,8 @@ usage indexes. It does not install or run a privileged indexing service.
   edition does not expose IPC)
 
 If Everything is installed but not running, Luma starts it with `-startup`,
-which does not open a search window. The Everything tray icon can be disabled
-with **Tools → Options → UI → Show tray icon** without affecting Luma search.
+which does not open a search window. Before starting it, Luma configures the
+Everything client to run in the background without a second tray icon.
 The Luma settings page can either detect `Everything.exe` automatically or
 use a manually selected executable path. Exiting Luma also exits the Everything
 client that supplies IPC search results.
@@ -55,3 +55,9 @@ installation. Everything itself is still required for indexed file search.
 Drag the launcher from the search icon, shortcut badge, or other empty chrome.
 
 `Luma.exe --settings` opens the settings window directly.
+
+## Design notes
+
+The architecture decisions and open-source launcher research are documented in
+[`docs/OPEN_SOURCE_RESEARCH.md`](docs/OPEN_SOURCE_RESEARCH.md). The local
+before/after snapshot is in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).

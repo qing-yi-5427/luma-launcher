@@ -5,17 +5,30 @@ namespace LumaLauncher.Services;
 
 public static class FuzzyMatcher
 {
+    public readonly record struct PreparedQuery(string Normalized, string[] Tokens);
+
+    public static PreparedQuery Prepare(string query)
+    {
+        var normalized = Normalize(query).Trim();
+        return new PreparedQuery(normalized,
+            normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    public static string PrepareCandidate(string value) => Normalize(value);
+
     public static double Score(string query, string title, string subtitle)
     {
-        var normalizedQuery = Normalize(query).Trim();
-        if (normalizedQuery.Length == 0)
-            return 0;
+        var prepared = Prepare(query);
+        return Score(prepared, PrepareCandidate(title), PrepareCandidate(subtitle));
+    }
 
-        var normalizedTitle = Normalize(title);
-        var normalizedSubtitle = Normalize(subtitle);
+    public static double Score(PreparedQuery query, string normalizedTitle, string normalizedSubtitle)
+    {
+        if (query.Normalized.Length == 0)
+            return 0;
         var total = 0d;
 
-        foreach (var token in normalizedQuery.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var token in query.Tokens)
         {
             var tokenScore = ScoreToken(token, normalizedTitle);
             if (tokenScore < 0)
@@ -27,8 +40,8 @@ public static class FuzzyMatcher
             total += tokenScore;
         }
 
-        if (normalizedTitle.Equals(normalizedQuery, StringComparison.Ordinal)) total += 520;
-        else if (normalizedTitle.StartsWith(normalizedQuery, StringComparison.Ordinal)) total += 260;
+        if (normalizedTitle.Equals(query.Normalized, StringComparison.Ordinal)) total += 520;
+        else if (normalizedTitle.StartsWith(query.Normalized, StringComparison.Ordinal)) total += 260;
         total -= Math.Min(70, normalizedTitle.Length * 0.45);
         return total;
     }

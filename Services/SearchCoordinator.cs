@@ -11,7 +11,7 @@ public sealed class SearchCoordinator : IDisposable
     private Task? _initializeTask;
 
     public Task InitializeAsync(CancellationToken token = default) =>
-        _initializeTask ??= _apps.ReloadAsync(token);
+        _initializeTask ??= _apps.InitializeAsync(token);
 
     public void ConfigureEverything(AppSettings settings) =>
         _everything.Configure(settings.EverythingPathMode, settings.EverythingPath);
@@ -24,22 +24,29 @@ public sealed class SearchCoordinator : IDisposable
 
     public async Task<SearchBatch> SearchAsync(string query, int maximumResults, CancellationToken token)
     {
-        if (_initializeTask is not null)
+        if (_initializeTask is not null && !_apps.IsReady)
         {
             try { await _initializeTask.WaitAsync(token).ConfigureAwait(false); }
             catch (OperationCanceledException) { throw; }
             catch { }
         }
 
-        var appTask = Task.Run(() => _apps.Search(query, maximumResults, _usage), token);
+        var preparedQuery = FuzzyMatcher.Prepare(query);
+        var appTask = Task.Run(() => _apps.Search(preparedQuery, maximumResults, _usage), token);
         var fileTask = _everything.SearchAsync(query, Math.Max(maximumResults * 5, 40), token);
         await Task.WhenAll(appTask, fileTask).ConfigureAwait(false);
 
         var all = new List<LauncherResult>(appTask.Result.Count + fileTask.Result.Results.Count);
         all.AddRange(appTask.Result);
-        foreach (var file in fileTask.Result.Results)
+        var everythingSyntax = LooksLikeEverythingSyntax(query);
+        for (var index = 0; index < fileTask.Result.Results.Count; index++)
         {
-            var match = FuzzyMatcher.Score(query, file.Title, file.Subtitle);
+            var file = fileTask.Result.Results[index];
+            var match = everythingSyntax
+                ? 120 - index
+                : FuzzyMatcher.Score(preparedQuery,
+                    FuzzyMatcher.PrepareCandidate(file.Title),
+                    FuzzyMatcher.PrepareCandidate(file.Subtitle));
             if (double.IsNegativeInfinity(match))
                 continue;
             all.Add(new LauncherResult
@@ -63,28 +70,37 @@ public sealed class SearchCoordinator : IDisposable
             .Take(maximumResults)
             .ToList();
 
-        await PopulateIconsAsync(ranked, token).ConfigureAwait(false);
         var source = fileTask.Result.Available ? "Everything + 应用" : $"仅应用 · {fileTask.Result.StatusText}";
         return new SearchBatch(ranked, $"{ranked.Count} 个结果 · {source}", fileTask.Result.Available);
     }
 
-    public async Task<SearchBatch> GetRecommendationsAsync(int maximumResults, CancellationToken token)
+    public Task<SearchBatch> GetRecommendationsAsync(int maximumResults, CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
         var recent = _usage.GetRecent(maximumResults).ToList();
-        await PopulateIconsAsync(recent, token).ConfigureAwait(false);
         var status = recent.Count == 0 ? "输入应用、文件名或 Everything 语法" : "最近使用";
-        return new SearchBatch(recent, status, true);
+        return Task.FromResult(new SearchBatch(recent, status, true));
     }
 
     public void RecordLaunch(LauncherResult result) => _usage.Record(result);
 
     public void ShutdownEverything() => _everything.ShutdownClient();
 
-    private async Task PopulateIconsAsync(IReadOnlyList<LauncherResult> results, CancellationToken token)
+    public async Task<IReadOnlyList<System.Windows.Media.ImageSource?>> LoadIconsAsync(
+        IReadOnlyList<LauncherResult> results, CancellationToken token)
     {
-        var tasks = results.Select(async result => result.Icon = await _icons.GetAsync(result.Target, token).ConfigureAwait(false));
-        await Task.WhenAll(tasks).ConfigureAwait(false);
+        var tasks = results.Select(result => _icons.GetAsync(result.Target, token));
+        return await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
-    public void Dispose() => _everything.Dispose();
+    public void TrimCaches() => _icons.Trim();
+
+    private static bool LooksLikeEverythingSyntax(string query) =>
+        query.IndexOfAny([':', '*', '?', '|', '!', '<', '>', '"']) >= 0;
+
+    public void Dispose()
+    {
+        _icons.Trim(0);
+        _everything.Dispose();
+    }
 }

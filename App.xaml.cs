@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Interop;
 using LumaLauncher.Models;
 using LumaLauncher.Services;
 
@@ -14,6 +15,7 @@ public sealed partial class App : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        DiagnosticsService.Initialize(this);
         base.OnStartup(e);
         _instance = new InstanceCoordinator();
         if (!_instance.IsPrimary)
@@ -31,14 +33,17 @@ public sealed partial class App : System.Windows.Application
         _launcherWindow.ExitRequested += ExitApplication;
         _launcherWindow.HotkeyRegistrationChanged += RegistrationChanged;
         _instance.ActivationRequested += () => Dispatcher.Invoke(_launcherWindow.ShowLauncher);
+        _instance.DrainPendingActivation();
 
         var registration = _launcherWindow.InitializeLauncher();
         _trayIcon = new TrayIconService(
+            new WindowInteropHelper(_launcherWindow).Handle,
             _launcherWindow.ToggleLauncher,
             OpenSettings,
             _launcherWindow.ReloadAppsAsync,
             ExitApplication,
             registration.Active);
+        _launcherWindow.TrayMessageHandler = _trayIcon.HandleMessage;
         if (registration.UsedFallback)
             _trayIcon.ShowHotkeyFallback(registration.Requested, registration.Active);
 
@@ -96,6 +101,9 @@ public sealed partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _launcherWindow?.ShutdownEverything();
+        if (_launcherWindow is not null)
+            _launcherWindow.TrayMessageHandler = null;
         _trayIcon?.Dispose();
         _instance?.Dispose();
         base.OnExit(e);

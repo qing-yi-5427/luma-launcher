@@ -38,6 +38,8 @@ public static class ThemeService
     private static void Set(string key, string color)
     {
         var parsed = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(color);
-        System.Windows.Application.Current.Resources[key] = new SolidColorBrush(parsed);
+        var brush = new SolidColorBrush(parsed);
+        brush.Freeze();
+        System.Windows.Application.Current.Resources[key] = brush;
     }
 }

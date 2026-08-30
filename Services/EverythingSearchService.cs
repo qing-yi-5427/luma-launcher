@@ -99,6 +99,7 @@ public sealed class EverythingSearchService : IDisposable
         EverythingNative.Reset();
         EverythingNative.SetSearch(query);
         EverythingNative.SetRequestFlags(RequestFullPath);
+        EverythingNative.SetSort(1);
         EverythingNative.SetMax((uint)Math.Max(1, maximumResults));
 
         if (!EverythingNative.Query(wait: true))
@@ -143,15 +144,17 @@ public sealed class EverythingSearchService : IDisposable
 
         try
         {
-            Process.Start(new ProcessStartInfo(executable, "-startup")
+            ConfigureHiddenTray(executable);
+            using var process = Process.Start(new ProcessStartInfo(executable, "-startup")
             {
                 UseShellExecute = true,
                 WindowStyle = ProcessWindowStyle.Hidden
             });
             return true;
         }
-        catch
+        catch (Exception exception)
         {
+            DiagnosticsService.Log("everything-start", exception);
             return false;
         }
     }
@@ -180,10 +183,68 @@ public sealed class EverythingSearchService : IDisposable
     {
         if (Interlocked.Exchange(ref _shutdownRequested, 1) != 0)
             return;
-        try { EverythingNative.Exit(); }
+        var entered = false;
+        try
+        {
+            entered = _gate.Wait(TimeSpan.FromSeconds(2));
+            if (entered)
+                EverythingNative.Exit();
+            else
+                DiagnosticsService.Log("everything-exit", "Timed out waiting for an active query to finish.");
+        }
         catch (DllNotFoundException) { }
         catch (BadImageFormatException) { }
         catch (EntryPointNotFoundException) { }
+        finally
+        {
+            if (entered)
+                _gate.Release();
+        }
+    }
+
+    private static void ConfigureHiddenTray(string executable)
+    {
+        var portableIni = Path.Combine(Path.GetDirectoryName(executable) ?? string.Empty, "Everything.ini");
+        var appDataIni = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Everything", "Everything.ini");
+        var configPath = UsesPortableSettings(portableIni) ? portableIni : appDataIni;
+        var directory = Path.GetDirectoryName(configPath);
+        if (string.IsNullOrWhiteSpace(directory))
+            return;
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var lines = File.Exists(configPath) ? File.ReadAllLines(configPath).ToList() : [];
+            SetIniValue(lines, "show_tray_icon", "0");
+            SetIniValue(lines, "run_in_background", "1");
+            var temporary = configPath + ".luma.tmp";
+            File.WriteAllLines(temporary, lines, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            File.Move(temporary, configPath, true);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            DiagnosticsService.Log("everything-config", exception);
+        }
+    }
+
+    private static bool UsesPortableSettings(string iniPath)
+    {
+        try
+        {
+            return File.Exists(iniPath) && File.ReadLines(iniPath).Any(line =>
+                line.Trim().Equals("app_data=0", StringComparison.OrdinalIgnoreCase));
+        }
+        catch { return false; }
+    }
+
+    private static void SetIniValue(List<string> lines, string key, string value)
+    {
+        var prefix = key + "=";
+        var index = lines.FindIndex(line => line.TrimStart().StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        if (index >= 0)
+            lines[index] = prefix + value;
+        else
+            lines.Add(prefix + value);
     }
 
     private static string? GetRegistryAppPath(RegistryHive hive, RegistryView view)
@@ -200,7 +261,26 @@ public sealed class EverythingSearchService : IDisposable
         }
     }
 
-    public void Dispose() => _gate.Dispose();
+    public void Dispose()
+    {
+        var entered = false;
+        try
+        {
+            entered = _gate.Wait(TimeSpan.FromSeconds(2));
+            if (!entered)
+            {
+                DiagnosticsService.Log("everything-dispose", "Left the query gate alive because an IPC query did not finish in time.");
+                return;
+            }
+        }
+        catch (ObjectDisposedException) { return; }
+        finally
+        {
+            if (entered)
+                _gate.Release();
+        }
+        _gate.Dispose();
+    }
 
     private static class EverythingNative
     {
@@ -212,6 +292,9 @@ public sealed class EverythingSearchService : IDisposable
 
         [DllImport("Everything64.dll", EntryPoint = "Everything_SetMax")]
         internal static extern void SetMax(uint maximum);
+
+        [DllImport("Everything64.dll", EntryPoint = "Everything_SetSort")]
+        internal static extern void SetSort(uint sortType);
 
         [DllImport("Everything64.dll", CharSet = CharSet.Unicode, EntryPoint = "Everything_QueryW")]
         [return: MarshalAs(UnmanagedType.Bool)]

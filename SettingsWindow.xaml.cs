@@ -8,8 +8,14 @@ namespace LumaLauncher;
 
 public sealed partial class SettingsWindow : Window
 {
+    private readonly string _originalTheme;
+    private readonly string _webSearchUrl;
+    private bool _saved;
+
     public SettingsWindow(AppSettings settings)
     {
+        _originalTheme = settings.Theme;
+        _webSearchUrl = settings.WebSearchUrl;
         InitializeComponent();
         HotkeyBox.SelectedValue = settings.Hotkey;
         ThemeBox.SelectedValue = settings.Theme;
@@ -18,6 +24,13 @@ public sealed partial class SettingsWindow : Window
             ? "Manual"
             : "Auto";
         EverythingPathBox.Text = settings.EverythingPath;
+        EverythingLifecycleBox.SelectedValue = settings.EverythingLifecycle.Equals("Connect", StringComparison.OrdinalIgnoreCase)
+            ? "Connect"
+            : "Managed";
+        QuickSwitchBox.IsChecked = settings.EnableQuickSwitch;
+        AliasesBox.Text = settings.Aliases;
+        AppFoldersBox.Text = settings.AppFolders;
+        CommandsBox.Text = settings.CustomCommands;
         UpdateEverythingControls();
         SourceInitialized += (_, _) => ApplyDwmStyling();
     }
@@ -42,11 +55,18 @@ public sealed partial class SettingsWindow : Window
             Theme = ThemeBox.SelectedValue as string ?? "System",
             StartWithWindows = StartupBox.IsChecked == true,
             EverythingPathMode = everythingMode,
-            EverythingPath = everythingPath
+            EverythingPath = everythingPath,
+            EverythingLifecycle = EverythingLifecycleBox.SelectedValue as string ?? "Managed",
+            EnableQuickSwitch = QuickSwitchBox.IsChecked == true,
+            Aliases = AliasesBox.Text.Trim(),
+            AppFolders = AppFoldersBox.Text.Trim(),
+            CustomCommands = CommandsBox.Text.Trim(),
+            WebSearchUrl = _webSearchUrl
         };
         try
         {
             SettingsSaved?.Invoke(settings);
+            _saved = true;
             Close();
         }
         catch (Exception exception)
@@ -69,14 +89,19 @@ public sealed partial class SettingsWindow : Window
         EverythingPathGrid.IsEnabled = manual;
         EverythingPathGrid.Opacity = manual ? 1 : 0.5;
         EverythingPathHint.SetResourceReference(ForegroundProperty, "FaintTextBrush");
+        var connectOnly = (EverythingLifecycleBox.SelectedValue as string) == "Connect";
         if (manual)
         {
-            EverythingPathHint.Text = "选择 Everything.exe；保存后会立即以隐藏模式启动。";
+            EverythingPathHint.Text = connectOnly
+                ? "选择用于检测的 Everything.exe；Luma 不会负责启动或关闭它。"
+                : "选择 Everything.exe；保存后会立即以隐藏模式启动。";
             return;
         }
 
         var detected = EverythingSearchService.FindExecutable();
-        EverythingPathHint.Text = detected is null ? "未自动找到 Everything，可切换为手动指定。" : $"已找到：{detected}";
+        EverythingPathHint.Text = detected is null
+            ? "未自动找到 Everything，可切换为手动指定。"
+            : connectOnly ? $"将仅连接已有实例：{detected}" : $"已找到：{detected}";
     }
 
     private void BrowseEverything_Click(object sender, RoutedEventArgs e)
@@ -93,7 +118,24 @@ public sealed partial class SettingsWindow : Window
             EverythingPathBox.Text = dialog.FileName;
     }
 
-    private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
+    private void ThemeBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (ThemeBox.SelectedValue is string theme)
+            ThemeService.Apply(theme);
+    }
+
+    private void Cancel_Click(object sender, RoutedEventArgs e)
+    {
+        ThemeService.Apply(_originalTheme);
+        Close();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        if (!_saved)
+            ThemeService.Apply(_originalTheme);
+        base.OnClosed(e);
+    }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

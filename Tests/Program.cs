@@ -1,4 +1,5 @@
 using LumaLauncher.Services;
+using LumaLauncher.Models;
 using System.Diagnostics;
 
 var exact = FuzzyMatcher.Score("notepad", "Notepad", string.Empty);
@@ -10,6 +11,25 @@ Require(double.IsNegativeInfinity(miss), "Unrelated text should not match.");
 var prepared = FuzzyMatcher.Prepare("ntpd");
 Require(FuzzyMatcher.Score(prepared, FuzzyMatcher.PrepareCandidate("Notepad"), string.Empty) == fuzzy,
     "Prepared fuzzy matching should preserve ranking behavior.");
+Require(!double.IsNegativeInfinity(FuzzyMatcher.Score("wx", "微信", string.Empty)),
+    "Chinese application names should match their Pinyin initials.");
+
+using (var builtIns = new SearchCoordinator())
+{
+    builtIns.Configure(new AppSettings
+    {
+        CustomCommands = "note|新建记事|notepad.exe|{query}|"
+    });
+    var calculation = await builtIns.SearchAsync("= (12 + 8) * 3", 8, CancellationToken.None);
+    Require(calculation.Results.FirstOrDefault()?.Kind == LauncherResultKind.Calculation &&
+            calculation.Results[0].CopyText == "60", "Calculator queries should return a copyable result.");
+    var website = await builtIns.SearchAsync("example.com", 8, CancellationToken.None);
+    Require(website.Results.FirstOrDefault()?.Kind == LauncherResultKind.Web,
+        "Domain names should return a web result.");
+    var command = await builtIns.SearchAsync("note roadmap", 8, CancellationToken.None);
+    Require(command.Results.FirstOrDefault()?.Kind == LauncherResultKind.Command &&
+            command.Results[0].Arguments == "roadmap", "Custom command placeholders should receive query arguments.");
+}
 
 var apps = new AppIndexService();
 await apps.InitializeAsync();
@@ -38,6 +58,8 @@ var combined = await coordinator.SearchAsync("Windows", 8, CancellationToken.Non
 Require(combined.Results.Count > 0, "Combined search should return results.");
 var syntax = await coordinator.SearchAsync("ext:exe", 8, CancellationToken.None);
 Require(syntax.EverythingAvailable && syntax.Results.Count > 0, "Everything syntax should not be removed by fuzzy filtering.");
+var expanded = await coordinator.SearchAsync("exe", 64, CancellationToken.None);
+Require(expanded.Results.Count > 8, "Expanded searches should provide enough results for paging and filters.");
 
 var latencies = new List<long>();
 foreach (var query in new[] { "win", "windows", "note", "exe", "program", "system" })

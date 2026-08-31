@@ -13,6 +13,12 @@
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
+        <Style x:Key="FilterButton" TargetType="Button" BasedOn="{StaticResource QuietButton}">
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="MinWidth" Value="42"/>
+        </Style>
         <Style TargetType="ListBoxItem">
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Padding" Value="0"/>
@@ -70,7 +76,7 @@
                 </Grid>
 
                 <Grid Grid.Column="1">
-                    <TextBlock x:Name="SearchHint" Text="搜索应用、文件，或输入 Everything 语法"
+                    <TextBlock x:Name="SearchHint" Text="搜索应用、文件，输入 = 计算，? 搜网页"
                                Foreground="{DynamicResource FaintTextBrush}" FontSize="20" VerticalAlignment="Center"
                                IsHitTestVisible="False"/>
                     <TextBox x:Name="SearchBox" Background="Transparent" BorderThickness="0"
@@ -91,11 +97,22 @@
             </Grid>
 
             <Grid x:Name="ResultsHost" Grid.Row="1" Margin="12,0" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="36"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <StackPanel Orientation="Horizontal" Margin="8,2,0,4">
+                    <Button x:Name="AllFilterButton" Content="全部" Tag="All" Style="{StaticResource FilterButton}" Click="Filter_Click"/>
+                    <Button x:Name="AppFilterButton" Content="应用" Tag="Application" Style="{StaticResource FilterButton}" Click="Filter_Click"/>
+                    <Button x:Name="FileFilterButton" Content="文件" Tag="File" Style="{StaticResource FilterButton}" Click="Filter_Click"/>
+                    <Button x:Name="FolderFilterButton" Content="文件夹" Tag="Folder" Style="{StaticResource FilterButton}" Click="Filter_Click"/>
+                </StackPanel>
                 <TextBlock x:Name="EmptyText" Text="没有找到匹配项" Foreground="{DynamicResource MutedTextBrush}"
-                           FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                <ListBox x:Name="ResultsList" Background="Transparent" BorderThickness="0"
+                           Grid.Row="1" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <ListBox x:Name="ResultsList" Grid.Row="1" Background="Transparent" BorderThickness="0"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
-                         SelectionChanged="ResultsList_SelectionChanged" MouseDoubleClick="ResultsList_MouseDoubleClick">
+                         SelectionChanged="ResultsList_SelectionChanged" MouseDoubleClick="ResultsList_MouseDoubleClick"
+                         PreviewMouseRightButtonDown="ResultsList_PreviewMouseRightButtonDown">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Grid Height="48">
@@ -117,11 +134,15 @@
                                     <TextBlock Text="{Binding Subtitle}" FontSize="10.5" Margin="0,2,0,0"
                                                Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis"/>
                                 </StackPanel>
-                                <Border Grid.Column="2" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource StrokeBrush}"
-                                        BorderThickness="1" CornerRadius="5" Padding="7,3" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding SourceLabel}" FontFamily="Bahnschrift SemiCondensed, Segoe UI"
-                                               Foreground="{DynamicResource FaintTextBrush}" FontSize="9"/>
-                                </Border>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding FavoriteGlyph}" Foreground="{DynamicResource AccentBrush}"
+                                               FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource StrokeBrush}"
+                                            BorderThickness="1" CornerRadius="5" Padding="7,3">
+                                        <TextBlock Text="{Binding SourceLabel}" FontFamily="Bahnschrift SemiCondensed, Segoe UI"
+                                                   Foreground="{DynamicResource FaintTextBrush}" FontSize="9"/>
+                                    </Border>
+                                </StackPanel>
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
@@ -132,11 +153,14 @@
                     BorderThickness="0,1,0,0" Background="{DynamicResource PanelBrush}">
                 <Grid Margin="18,0">
                     <TextBlock x:Name="StatusText" VerticalAlignment="Center" FontSize="10.5"
-                               Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis"/>
+                               Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis" Margin="0,0,330,0"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                         <TextBlock Text="↵ 打开" FontSize="10" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,15,0"/>
                         <TextBlock Text="⌃↵ 定位" FontSize="10" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,15,0"/>
-                        <TextBlock Text="→ 操作" FontSize="10" Foreground="{DynamicResource FaintTextBrush}"/>
+                        <TextBlock x:Name="QuickSwitchHint" Text="⌃G 快速切换" FontSize="10"
+                                   Foreground="{DynamicResource AccentBrush}" Margin="0,0,15,0" Visibility="Collapsed"/>
+                        <Button x:Name="MoreButton" Content="更多" Style="{StaticResource FilterButton}"
+                                Margin="0" Click="MoreButton_Click" Visibility="Collapsed"/>
                     </StackPanel>
                 </Grid>
             </Border>

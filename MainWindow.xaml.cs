@@ -13,9 +13,13 @@ namespace LumaLauncher;
 public sealed partial class MainWindow : Window
 {
     private const double CompactHeight = 94;
-    private const double ExpandedHeight = 522;
+    private const double ExpandedHeight = 560;
+    private const int PageSize = 8;
+    private const int SearchResultLimit = 64;
     private readonly ObservableCollection<LauncherResult> _results = [];
+    private readonly List<LauncherResult> _allResults = [];
     private readonly SearchCoordinator _search = new();
+    private readonly QuickSwitchService _quickSwitch = new();
     private readonly SettingsStore _settings;
     private readonly HotkeyService _hotkey = new();
     private CancellationTokenSource? _searchCancellation;
@@ -25,6 +29,9 @@ public sealed partial class MainWindow : Window
     private long _searchGeneration;
     private bool _allowClose;
     private bool _contextMenuOpen;
+    private string _activeFilter = "All";
+    private string _batchStatus = string.Empty;
+    private int _pageIndex;
     private DateTimeOffset _ignoreDeactivateUntil;
 
     internal Func<int, IntPtr, IntPtr, bool>? TrayMessageHandler { get; set; }
@@ -54,8 +61,11 @@ public sealed partial class MainWindow : Window
     public void ApplySettings()
     {
         ThemeService.Apply(_settings.Current.Theme);
-        _search.ConfigureEverything(_settings.Current);
+        var foldersChanged = _search.Configure(_settings.Current);
+        _quickSwitch.Enabled = _settings.Current.EnableQuickSwitch;
         _ = EnsureEverythingRunningAsync();
+        if (foldersChanged && _search.IsInitialized)
+            _ = ReloadAppsAsync();
         if (_source is null)
             return;
         _registration = _hotkey.Register(_source.Handle, _settings.Current.Hotkey);
@@ -106,6 +116,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        _quickSwitch.CaptureForegroundDialog();
         _idleMaintenanceCancellation?.Cancel();
         Show();
         _ignoreDeactivateUntil = DateTimeOffset.UtcNow.AddMilliseconds(900);
@@ -116,6 +127,7 @@ public sealed partial class MainWindow : Window
         SearchBox.Focus();
         Keyboard.Focus(SearchBox);
         SearchBox.SelectAll();
+        QuickSwitchHint.Visibility = _quickSwitch.HasTarget ? Visibility.Visible : Visibility.Collapsed;
         AnimateShow();
         if (string.IsNullOrWhiteSpace(SearchBox.Text))
             _ = ShowRecommendationsAsync();
@@ -202,7 +214,9 @@ public sealed partial class MainWindow : Window
         }
 
         SetExpanded(0, showBody: true);
+        _allResults.Clear();
         _results.Clear();
+        MoreButton.Visibility = Visibility.Collapsed;
         EmptyText.Text = "正在搜索…";
         EmptyText.Visibility = Visibility.Visible;
         ResultsList.Visibility = Visibility.Collapsed;
@@ -212,12 +226,11 @@ public sealed partial class MainWindow : Window
         {
             await Task.Delay(65, token);
             var query = SearchBox.Text.Trim();
-            var batch = await _search.SearchAsync(query, 8, token);
+            var batch = await _search.SearchAsync(query, SearchResultLimit, token);
             if (generation != _searchGeneration || !query.Equals(SearchBox.Text.Trim(), StringComparison.Ordinal))
                 return;
             ApplyBatch(batch, "没有找到匹配项");
-            SetExpanded(batch.Results.Count, showBody: true);
-            _ = LoadIconsAsync(batch.Results, generation, token);
+            _ = LoadIconsAsync(_results.ToList(), generation, token);
         }
         catch (OperationCanceledException) { }
         catch (Exception exception) when (generation == _searchGeneration)
@@ -234,26 +247,60 @@ public sealed partial class MainWindow : Window
         var token = _searchCancellation?.Token ?? CancellationToken.None;
         try
         {
-            var batch = await _search.GetRecommendationsAsync(8, token);
+            var batch = await _search.GetRecommendationsAsync(SearchResultLimit, token);
             if (generation != _searchGeneration || SearchBox.Text.Length != 0)
                 return;
             ApplyBatch(batch, "输入应用、文件名或 Everything 语法");
-            SetExpanded(batch.Results.Count, batch.Results.Count > 0);
-            _ = LoadIconsAsync(batch.Results, generation, token);
+            _ = LoadIconsAsync(_results.ToList(), generation, token);
         }
         catch (OperationCanceledException) { }
     }
 
     private void ApplyBatch(SearchBatch batch, string emptyMessage)
     {
+        _allResults.Clear();
+        _allResults.AddRange(batch.Results);
+        _batchStatus = batch.StatusText;
+        _pageIndex = 0;
+        ApplyCurrentPage(emptyMessage);
+    }
+
+    private void ApplyCurrentPage(string emptyMessage = "这个分类没有结果")
+    {
+        var filtered = _allResults.Where(MatchesActiveFilter).ToList();
+        var pageCount = Math.Max(1, (int)Math.Ceiling(filtered.Count / (double)PageSize));
+        _pageIndex = Math.Clamp(_pageIndex, 0, pageCount - 1);
+
         _results.Clear();
-        foreach (var result in batch.Results)
+        foreach (var result in filtered.Skip(_pageIndex * PageSize).Take(PageSize))
             _results.Add(result);
         ResultsList.SelectedIndex = _results.Count > 0 ? 0 : -1;
         EmptyText.Text = emptyMessage;
         EmptyText.Visibility = _results.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ResultsList.Visibility = _results.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-        StatusText.Text = batch.StatusText;
+        StatusText.Text = filtered.Count == 0 ? _batchStatus : $"{filtered.Count} 个结果 · {_batchStatus}";
+        MoreButton.Visibility = filtered.Count > PageSize ? Visibility.Visible : Visibility.Collapsed;
+        MoreButton.Content = pageCount > 1 ? $"{_pageIndex + 1}/{pageCount}  更多" : "更多";
+        UpdateFilterButtons();
+        SetExpanded(_results.Count, _allResults.Count > 0 || SearchBox.Text.Length > 0);
+    }
+
+    private bool MatchesActiveFilter(LauncherResult result) => _activeFilter switch
+    {
+        "Application" => result.Kind == LauncherResultKind.Application,
+        "File" => result.Kind == LauncherResultKind.File,
+        "Folder" => result.Kind == LauncherResultKind.Folder,
+        _ => true
+    };
+
+    private void UpdateFilterButtons()
+    {
+        foreach (var button in new[] { AllFilterButton, AppFilterButton, FileFilterButton, FolderFilterButton })
+        {
+            var selected = string.Equals(button.Tag as string, _activeFilter, StringComparison.Ordinal);
+            button.SetResourceReference(BackgroundProperty, selected ? "AccentSoftBrush" : "PanelHoverBrush");
+            button.SetResourceReference(BorderBrushProperty, selected ? "AccentBrush" : "StrokeBrush");
+        }
     }
 
     private async Task LoadIconsAsync(IReadOnlyList<LauncherResult> results, long generation, CancellationToken token)
@@ -278,7 +325,7 @@ public sealed partial class MainWindow : Window
         FooterRow.Height = new GridLength(showBody ? 38 : 0);
         ResultsHost.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
         Footer.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
-        var resultArea = resultCount > 0 ? Math.Min(8, resultCount) * 48 + 8 : 92;
+        var resultArea = 36 + (resultCount > 0 ? Math.Min(PageSize, resultCount) * 48 + 8 : 72);
         var targetHeight = showBody ? Math.Min(ExpandedHeight, CompactHeight + resultArea + 38) : CompactHeight;
         if (!SystemParameters.ClientAreaAnimation)
         {
@@ -306,6 +353,25 @@ public sealed partial class MainWindow : Window
         BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(115)));
         WindowTranslate.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty,
             new DoubleAnimation(0, TimeSpan.FromMilliseconds(150)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+    }
+
+    private void Filter_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string filter })
+            return;
+        _activeFilter = filter;
+        _pageIndex = 0;
+        ApplyCurrentPage();
+        _ = LoadIconsAsync(_results.ToList(), _searchGeneration, _searchCancellation?.Token ?? CancellationToken.None);
+    }
+
+    private void MoreButton_Click(object sender, RoutedEventArgs e)
+    {
+        var filteredCount = _allResults.Count(MatchesActiveFilter);
+        var pageCount = Math.Max(1, (int)Math.Ceiling(filteredCount / (double)PageSize));
+        _pageIndex = (_pageIndex + 1) % pageCount;
+        ApplyCurrentPage();
+        _ = LoadIconsAsync(_results.ToList(), _searchGeneration, _searchCancellation?.Token ?? CancellationToken.None);
     }
 
     private void PositionOnCursorMonitor()
@@ -351,6 +417,26 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        if (e.Key is Key.PageDown or Key.PageUp && MoreButton.Visibility == Visibility.Visible)
+        {
+            var filteredCount = _allResults.Count(MatchesActiveFilter);
+            var pageCount = Math.Max(1, (int)Math.Ceiling(filteredCount / (double)PageSize));
+            _pageIndex = e.Key == Key.PageDown
+                ? (_pageIndex + 1) % pageCount
+                : (_pageIndex - 1 + pageCount) % pageCount;
+            ApplyCurrentPage();
+            _ = LoadIconsAsync(_results.ToList(), _searchGeneration, _searchCancellation?.Token ?? CancellationToken.None);
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.G && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            _ = QuickSwitchSelectedAsync();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.Enter)
         {
             var modifiers = Keyboard.Modifiers;
@@ -392,7 +478,8 @@ public sealed partial class MainWindow : Window
             return;
         if (ResultExecutionService.Open(selected, runAsAdministrator))
         {
-            _search.RecordLaunch(selected);
+            if (selected.Kind != LauncherResultKind.Calculation)
+                _search.RecordLaunch(selected);
             HideLauncher();
         }
     }
@@ -401,6 +488,12 @@ public sealed partial class MainWindow : Window
     {
         if (ResultsList.SelectedItem is not LauncherResult selected)
             return;
+        if (!selected.IsFileSystemItem)
+        {
+            ResultExecutionService.CopyPath(selected);
+            StatusText.Text = "已复制";
+            return;
+        }
         ResultExecutionService.Reveal(selected);
         HideLauncher();
     }
@@ -410,12 +503,40 @@ public sealed partial class MainWindow : Window
         if (ResultsList.SelectedItem is not LauncherResult selected)
             return;
 
-        var menu = new System.Windows.Controls.ContextMenu();
-        AddMenuItem(menu, "打开", () => OpenSelected(false));
-        AddMenuItem(menu, "在文件资源管理器中显示", RevealSelected);
-        AddMenuItem(menu, "复制路径", () => ResultExecutionService.CopyPath(selected));
+        var menu = new System.Windows.Controls.ContextMenu
+        {
+            Background = (System.Windows.Media.Brush)FindResource("PanelBrush"),
+            Foreground = (System.Windows.Media.Brush)FindResource("TextBrush"),
+            BorderBrush = (System.Windows.Media.Brush)FindResource("StrokeBrush"),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(4),
+            ItemContainerStyle = (Style)FindResource("LumaMenuItem")
+        };
+        AddMenuItem(menu, selected.Kind == LauncherResultKind.Calculation ? "复制结果" : "打开", () => OpenSelected(false));
+        if (selected.Kind is LauncherResultKind.Folder or LauncherResultKind.File && _quickSwitch.HasTarget)
+            AddMenuItem(menu, selected.Kind == LauncherResultKind.Folder
+                ? "切换文件对话框到这里"
+                : "切换文件对话框到父目录", () => _ = QuickSwitchSelectedAsync());
+        if (selected.IsFileSystemItem)
+        {
+            AddMenuItem(menu, "在文件资源管理器中显示", RevealSelected);
+            if (selected.Kind == LauncherResultKind.File)
+                AddMenuItem(menu, "打开方式…", () => ResultExecutionService.OpenWith(selected));
+            AddMenuItem(menu, "在此处打开终端", () => ResultExecutionService.OpenTerminal(selected));
+            AddMenuItem(menu, "属性", () => ResultExecutionService.ShowProperties(selected));
+        }
+        AddMenuItem(menu, selected.Kind == LauncherResultKind.Calculation ? "复制" : "复制路径", () => ResultExecutionService.CopyPath(selected));
+        if (selected.IsFileSystemItem)
+            AddMenuItem(menu, "复制父目录", () => ResultExecutionService.CopyParent(selected));
         if (selected.CanRunAsAdministrator)
             AddMenuItem(menu, "以管理员身份运行", () => OpenSelected(true));
+        if (selected.Kind != LauncherResultKind.Calculation)
+        {
+            menu.Items.Add(new Separator());
+            var favoriteTitle = _search.IsFavorite(selected) ? "取消收藏" : "加入收藏";
+            AddMenuItem(menu, favoriteTitle, () => ToggleFavorite(selected));
+            AddMenuItem(menu, "从最近使用中移除", () => RemoveFromHistory(selected));
+        }
         menu.Closed += (_, _) => _contextMenuOpen = false;
         _contextMenuOpen = true;
         menu.PlacementTarget = ResultsList;
@@ -430,6 +551,53 @@ public sealed partial class MainWindow : Window
     }
 
     private void ResultsList_MouseDoubleClick(object sender, MouseButtonEventArgs e) => OpenSelected(false);
+
+    private void ResultsList_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var container = ItemsControl.ContainerFromElement(ResultsList, e.OriginalSource as DependencyObject) as ListBoxItem;
+        if (container is not null)
+            ResultsList.SelectedItem = container.DataContext;
+        ShowActions();
+        e.Handled = true;
+    }
+
+    private async Task QuickSwitchSelectedAsync()
+    {
+        if (ResultsList.SelectedItem is not LauncherResult selected)
+            return;
+        var folder = selected.Kind switch
+        {
+            LauncherResultKind.Folder => selected.Target,
+            LauncherResultKind.File => Path.GetDirectoryName(selected.Target),
+            _ => null
+        };
+        if (string.IsNullOrWhiteSpace(folder) || !_quickSwitch.HasTarget)
+        {
+            StatusText.Text = "没有可用的文件对话框，或当前结果不包含目录";
+            return;
+        }
+        HideLauncher();
+        if (!await _quickSwitch.SwitchAsync(folder))
+        {
+            ShowLauncher();
+            StatusText.Text = "快速切换失败；当前应用可能使用了非标准文件对话框";
+        }
+    }
+
+    private void ToggleFavorite(LauncherResult selected)
+    {
+        var favorite = _search.ToggleFavorite(selected);
+        selected.IsFavorite = favorite;
+        StatusText.Text = favorite ? "已加入收藏" : "已取消收藏";
+    }
+
+    private void RemoveFromHistory(LauncherResult selected)
+    {
+        _search.RemoveFromHistory(selected);
+        _allResults.RemoveAll(result => result.Target.Equals(selected.Target, StringComparison.OrdinalIgnoreCase));
+        ApplyCurrentPage();
+        StatusText.Text = "已从最近使用中移除";
+    }
 
     private void ResultsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {

@@ -17,12 +17,15 @@ public sealed class EverythingSearchService : IDisposable
     private int _shutdownRequested;
     private string _pathMode = "Auto";
     private string _configuredPath = string.Empty;
+    private string _lifecycle = "Managed";
 
-    public void Configure(string pathMode, string configuredPath)
+    public void Configure(string pathMode, string configuredPath, string lifecycle = "Managed")
     {
         _pathMode = pathMode;
         _configuredPath = configuredPath.Trim().Trim('"');
+        _lifecycle = lifecycle.Equals("Connect", StringComparison.OrdinalIgnoreCase) ? "Connect" : "Managed";
         _startAttempted = false;
+        Interlocked.Exchange(ref _shutdownRequested, 0);
     }
 
     public async Task<bool> EnsureRunningAsync(CancellationToken token = default)
@@ -91,7 +94,55 @@ public sealed class EverythingSearchService : IDisposable
                 response = ExecuteQuery(query, maximumResults, token);
             }
         }
+
+        var hasSyntax = LooksLikeSyntax(query);
+        var fallbackThreshold = Math.Min(32, maximumResults);
+        if (response.Available && response.Results.Count < fallbackThreshold && !hasSyntax)
+        {
+            var fallbackQuery = CreateFuzzyQuery(query);
+            if (!string.IsNullOrWhiteSpace(fallbackQuery) && !fallbackQuery.Equals(query, StringComparison.Ordinal))
+                response = Merge(response, ExecuteQuery(fallbackQuery, maximumResults, token), maximumResults);
+        }
+        if (response.Available && !hasSyntax && SupportsPinyin() && query.Length is >= 2 and <= 32 &&
+            query.All(character => char.IsAsciiLetterOrDigit(character) || char.IsWhiteSpace(character)))
+            response = Merge(response, ExecuteQuery($"pinyin:<{query}>", maximumResults, token), maximumResults);
         return response;
+    }
+
+    private static EverythingSearchResponse Merge(EverythingSearchResponse primary, EverythingSearchResponse fallback, int maximum)
+    {
+        if (!fallback.Available || fallback.Results.Count == 0)
+            return primary;
+        var merged = primary.Results.Concat(fallback.Results)
+            .DistinctBy(result => result.Target, StringComparer.OrdinalIgnoreCase)
+            .Take(maximum)
+            .ToList();
+        return new EverythingSearchResponse(merged, true, "Everything");
+    }
+
+    private static string CreateFuzzyQuery(string query)
+    {
+        var tokens = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return string.Join(' ', tokens.Select(token => token.Length < 2
+            ? token
+            : "*" + string.Join('*', token.ToCharArray()) + "*"));
+    }
+
+    private static bool LooksLikeSyntax(string query) =>
+        query.IndexOfAny([':', '\\', '/', '*', '?', '|', '!', '<', '>', '"']) >= 0;
+
+    private static bool SupportsPinyin()
+    {
+        try
+        {
+            var major = EverythingNative.GetMajorVersion();
+            var minor = EverythingNative.GetMinorVersion();
+            return major > 1 || major == 1 && minor >= 5;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return false;
+        }
     }
 
     private static EverythingSearchResponse ExecuteQuery(string query, int maximumResults, CancellationToken token)
@@ -138,6 +189,8 @@ public sealed class EverythingSearchService : IDisposable
 
     private bool TryStartEverything()
     {
+        if (_lifecycle == "Connect")
+            return false;
         var executable = FindExecutable(_pathMode, _configuredPath);
         if (executable is null)
             return false;
@@ -181,6 +234,8 @@ public sealed class EverythingSearchService : IDisposable
 
     public void ShutdownClient()
     {
+        if (_lifecycle != "Managed")
+            return;
         if (Interlocked.Exchange(ref _shutdownRequested, 1) != 0)
             return;
         var entered = false;
@@ -316,6 +371,12 @@ public sealed class EverythingSearchService : IDisposable
         [DllImport("Everything64.dll", EntryPoint = "Everything_IsDBLoaded")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool IsDbLoaded();
+
+        [DllImport("Everything64.dll", EntryPoint = "Everything_GetMajorVersion")]
+        internal static extern uint GetMajorVersion();
+
+        [DllImport("Everything64.dll", EntryPoint = "Everything_GetMinorVersion")]
+        internal static extern uint GetMinorVersion();
 
         [DllImport("Everything64.dll", EntryPoint = "Everything_Exit")]
         [return: MarshalAs(UnmanagedType.Bool)]

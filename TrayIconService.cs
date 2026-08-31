@@ -106,7 +106,17 @@ internal sealed class TrayIconService : IDisposable
 
     private ContextMenu CreateMenu()
     {
-        var menu = new ContextMenu { Placement = PlacementMode.MousePoint };
+        var resources = System.Windows.Application.Current;
+        var menu = new ContextMenu
+        {
+            Placement = PlacementMode.MousePoint,
+            Background = (System.Windows.Media.Brush)resources.FindResource("PanelBrush"),
+            Foreground = (System.Windows.Media.Brush)resources.FindResource("TextBrush"),
+            BorderBrush = (System.Windows.Media.Brush)resources.FindResource("StrokeBrush"),
+            BorderThickness = new System.Windows.Thickness(1),
+            Padding = new System.Windows.Thickness(4),
+            ItemContainerStyle = (System.Windows.Style)resources.FindResource("LumaMenuItem")
+        };
         menu.Items.Add(CreateItem("显示 Luma", _toggleWindow));
         _hotkeyItem = new MenuItem { Header = $"快捷键  {_activeHotkey}", IsEnabled = false };
         menu.Items.Add(_hotkeyItem);

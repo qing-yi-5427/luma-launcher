@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="Luma 设置" Icon="/Assets/Luma.ico" Width="470" Height="500" WindowStartupLocation="CenterScreen"
+        Title="Luma 设置" Icon="/Assets/Luma.ico" Width="540" Height="700" WindowStartupLocation="CenterScreen"
         WindowStyle="None" ResizeMode="NoResize" Topmost="True" Background="{DynamicResource WindowBrush}"
         Foreground="{DynamicResource TextBrush}" FontFamily="Segoe UI Variable Text, Segoe UI">
     <shell:WindowChrome.WindowChrome>
@@ -162,7 +162,9 @@
                         Padding="0" Click="Cancel_Click"/>
             </Grid>
 
-            <StackPanel Grid.Row="1" Margin="22,6">
+            <ScrollViewer Grid.Row="1" Margin="22,6" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,0,8,10">
                 <TextBlock Text="唤醒快捷键" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,0,0,7"/>
                 <ComboBox x:Name="HotkeyBox" SelectedValuePath="Tag">
                     <ComboBoxItem Content="Alt + Space" Tag="Alt+Space"/>
@@ -172,10 +174,14 @@
                 </ComboBox>
 
                 <TextBlock Text="外观" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,19,0,7"/>
-                <ComboBox x:Name="ThemeBox" SelectedValuePath="Tag">
+                <ComboBox x:Name="ThemeBox" SelectedValuePath="Tag" SelectionChanged="ThemeBox_SelectionChanged">
                     <ComboBoxItem Content="跟随系统" Tag="System"/>
-                    <ComboBoxItem Content="深色" Tag="Dark"/>
-                    <ComboBoxItem Content="浅色" Tag="Light"/>
+                    <ComboBoxItem Content="Luma 暖夜" Tag="Dark"/>
+                    <ComboBoxItem Content="Luma 暖昼" Tag="Light"/>
+                    <ComboBoxItem Content="Windows 11 · 蓝晶" Tag="Win11Blue"/>
+                    <ComboBoxItem Content="Windows 11 · 石墨" Tag="Win11Graphite"/>
+                    <ComboBoxItem Content="Windows 11 · 雾白" Tag="Win11Mist"/>
+                    <ComboBoxItem Content="Windows 11 · 鼠尾草" Tag="Win11Sage"/>
                 </ComboBox>
 
                 <TextBlock Text="Everything" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,19,0,7"/>
@@ -183,6 +189,13 @@
                           SelectionChanged="EverythingMode_SelectionChanged">
                     <ComboBoxItem Content="自动查找（推荐）" Tag="Auto"/>
                     <ComboBoxItem Content="手动指定路径" Tag="Manual"/>
+                </ComboBox>
+
+                <TextBlock Text="运行方式" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,12,0,7"/>
+                <ComboBox x:Name="EverythingLifecycleBox" SelectedValuePath="Tag"
+                          SelectionChanged="EverythingMode_SelectionChanged">
+                    <ComboBoxItem Content="由 Luma 管理（自动启动，退出时关闭）" Tag="Managed"/>
+                    <ComboBoxItem Content="仅连接已有 Everything" Tag="Connect"/>
                 </ComboBox>
 
                 <Grid x:Name="EverythingPathGrid" Margin="0,8,0,0">
@@ -198,9 +211,32 @@
                            Margin="2,6,0,0" TextWrapping="Wrap" MaxHeight="28"/>
 
                 <CheckBox x:Name="StartupBox" Content="登录 Windows 后自动启动" Margin="2,17,0,0"/>
+                <CheckBox x:Name="QuickSwitchBox" Content="启用文件对话框快速切换（Ctrl + G）" Margin="2,12,0,0"/>
                 <TextBlock Text="Luma 不安装索引服务；文件搜索由本机 Everything 提供。"
                            Foreground="{DynamicResource FaintTextBrush}" FontSize="10" Margin="2,11,0,0"/>
+
+                <TextBlock Text="搜索个性化" Foreground="{DynamicResource AccentBrush}" FontSize="10"
+                           FontFamily="Bahnschrift SemiCondensed, Segoe UI" Margin="0,23,0,10"/>
+                <TextBlock Text="应用别名" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,0,0,7"/>
+                <TextBox x:Name="AliasesBox" Height="66" AcceptsReturn="True" VerticalContentAlignment="Top"
+                         VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap"
+                         ToolTip="每行一个：vsc=Visual Studio Code"/>
+                <TextBlock Text="每行一个，例如：vsc=Visual Studio Code" Foreground="{DynamicResource FaintTextBrush}"
+                           FontSize="10" Margin="2,5,0,0"/>
+
+                <TextBlock Text="附加应用目录" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,16,0,7"/>
+                <TextBox x:Name="AppFoldersBox" Height="58" AcceptsReturn="True" VerticalContentAlignment="Top"
+                         VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap"/>
+                <TextBlock Text="每行一个目录；用于便携应用。" Foreground="{DynamicResource FaintTextBrush}"
+                           FontSize="10" Margin="2,5,0,0"/>
+
+                <TextBlock Text="自定义命令" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,16,0,7"/>
+                <TextBox x:Name="CommandsBox" Height="88" AcceptsReturn="True" VerticalContentAlignment="Top"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap"/>
+                <TextBlock Text="格式：关键词|标题|程序|参数|工作目录；参数中可使用 {query}。"
+                           Foreground="{DynamicResource FaintTextBrush}" FontSize="10" Margin="2,5,0,0" TextWrapping="Wrap"/>
             </StackPanel>
+            </ScrollViewer>
 
             <Grid Grid.Row="2" Margin="22,0">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">

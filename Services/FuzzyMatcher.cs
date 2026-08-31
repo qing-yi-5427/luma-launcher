@@ -14,7 +14,14 @@ public static class FuzzyMatcher
             normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
 
-    public static string PrepareCandidate(string value) => Normalize(value);
+    public static string PrepareCandidate(string value)
+    {
+        var normalized = Normalize(value);
+        var initials = PinyinInitials.Get(value);
+        return string.IsNullOrEmpty(initials) || initials.Equals(normalized, StringComparison.Ordinal)
+            ? normalized
+            : $"{normalized} {initials}";
+    }
 
     public static double Score(string query, string title, string subtitle)
     {

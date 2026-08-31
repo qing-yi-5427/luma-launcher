@@ -1,8 +1,20 @@
 # Luma Launcher
 
-Luma is a compact Windows launcher for applications and files. It uses the
-Everything SDK for file search and keeps its own lightweight application and
-usage indexes. It does not install or run a privileged indexing service.
+Luma is a compact Windows launcher for applications, files, quick calculations,
+web searches and personal commands. It uses the Everything SDK for file search
+and keeps its own lightweight application and usage indexes. It does not install
+or run a privileged indexing service.
+
+## Features
+
+- Unified application, file and folder search with fuzzy and Pinyin-initial matching
+- Up to 64 ranked results with category filters and keyboard paging
+- Favorites, recent usage ranking, application aliases and portable-app folders
+- Calculator (`= 12 * 8`), URLs, web search (`? query`) and custom commands
+- File actions: reveal, copy, open with, properties, terminal and administrator launch
+- Listary-style Quick Switch: invoke Luma from a standard Open/Save dialog, choose a
+  folder and press `Ctrl+G`
+- Luma warm light/dark plus four Windows 11-inspired themes
 
 ## Requirements
 
@@ -11,12 +23,13 @@ usage indexes. It does not install or run a privileged indexing service.
 - The regular edition of Everything running in the background (the Lite
   edition does not expose IPC)
 
-If Everything is installed but not running, Luma starts it with `-startup`,
+In managed mode, if Everything is installed but not running, Luma starts it with `-startup`,
 which does not open a search window. Before starting it, Luma configures the
 Everything client to run in the background without a second tray icon.
 The Luma settings page can either detect `Everything.exe` automatically or
 use a manually selected executable path. Exiting Luma also exits the Everything
-client that supplies IPC search results.
+client that supplies IPC search results. Connect-only mode leaves an existing
+Everything process and its settings untouched.
 
 ## Build
 
@@ -48,6 +61,8 @@ installation. Everything itself is still required for indexed file search.
 - `Ctrl+Enter`: reveal in File Explorer
 - `Ctrl+Shift+Enter`: run as administrator
 - `Ctrl+C`: copy the selected path
+- `PageUp` / `PageDown`: move between result pages
+- `Ctrl+G`: switch an Open/Save dialog to the selected folder
 - `Right` or `Ctrl+O`: actions
 - `Ctrl+,`: settings
 - `Escape`: hide
@@ -55,6 +70,23 @@ installation. Everything itself is still required for indexed file search.
 Drag the launcher from the search icon, shortcut badge, or other empty chrome.
 
 `Luma.exe --settings` opens the settings window directly.
+
+## Personalization formats
+
+Settings accepts one application alias per line:
+
+```text
+vsc=Visual Studio Code
+wx=微信
+```
+
+Custom commands use `keyword|title|executable|arguments|working directory`.
+`{query}` is replaced with text following the keyword:
+
+```text
+note|新建记事|notepad.exe|{query}|
+code|用 VS Code 打开|code.cmd|{query}|%USERPROFILE%
+```
 
 ## Design notes
 

@@ -8,13 +8,22 @@ public sealed class SearchCoordinator : IDisposable
     private readonly EverythingSearchService _everything = new();
     private readonly IconService _icons = new();
     private readonly UsageStore _usage = new();
+    private readonly BuiltInSearchService _builtIns = new();
+    private IReadOnlyDictionary<string, string> _aliases = new Dictionary<string, string>();
     private Task? _initializeTask;
+
+    public bool IsInitialized => _apps.IsReady;
 
     public Task InitializeAsync(CancellationToken token = default) =>
         _initializeTask ??= _apps.InitializeAsync(token);
 
-    public void ConfigureEverything(AppSettings settings) =>
-        _everything.Configure(settings.EverythingPathMode, settings.EverythingPath);
+    public bool Configure(AppSettings settings)
+    {
+        _everything.Configure(settings.EverythingPathMode, settings.EverythingPath, settings.EverythingLifecycle);
+        _builtIns.Configure(settings);
+        _aliases = ParseAliases(settings.Aliases);
+        return _apps.ConfigureCustomFolders(settings.AppFolders);
+    }
 
     public Task<bool> EnsureEverythingRunningAsync(CancellationToken token = default) =>
         _everything.EnsureRunningAsync(token);
@@ -24,6 +33,10 @@ public sealed class SearchCoordinator : IDisposable
 
     public async Task<SearchBatch> SearchAsync(string query, int maximumResults, CancellationToken token)
     {
+        var builtInResults = _builtIns.Search(query);
+        if (builtInResults.Count > 0)
+            return new SearchBatch(builtInResults.Take(maximumResults).ToList(), "Luma 内建工具", true);
+
         if (_initializeTask is not null && !_apps.IsReady)
         {
             try { await _initializeTask.WaitAsync(token).ConfigureAwait(false); }
@@ -32,7 +45,7 @@ public sealed class SearchCoordinator : IDisposable
         }
 
         var preparedQuery = FuzzyMatcher.Prepare(query);
-        var appTask = Task.Run(() => _apps.Search(preparedQuery, maximumResults, _usage), token);
+        var appTask = Task.Run(() => _apps.Search(preparedQuery, maximumResults, _usage, _aliases), token);
         var fileTask = _everything.SearchAsync(query, Math.Max(maximumResults * 5, 40), token);
         await Task.WhenAll(appTask, fileTask).ConfigureAwait(false);
 
@@ -55,7 +68,8 @@ public sealed class SearchCoordinator : IDisposable
                 Subtitle = file.Subtitle,
                 Target = file.Target,
                 Kind = file.Kind,
-                Score = match + _usage.GetBoost(file.Target)
+                Score = match + _usage.GetBoost(file.Target),
+                IsFavorite = _usage.IsFavorite(file.Target)
             });
         }
 
@@ -71,7 +85,7 @@ public sealed class SearchCoordinator : IDisposable
             .ToList();
 
         var source = fileTask.Result.Available ? "Everything + 应用" : $"仅应用 · {fileTask.Result.StatusText}";
-        return new SearchBatch(ranked, $"{ranked.Count} 个结果 · {source}", fileTask.Result.Available);
+        return new SearchBatch(ranked, source, fileTask.Result.Available);
     }
 
     public Task<SearchBatch> GetRecommendationsAsync(int maximumResults, CancellationToken token)
@@ -83,6 +97,12 @@ public sealed class SearchCoordinator : IDisposable
     }
 
     public void RecordLaunch(LauncherResult result) => _usage.Record(result);
+
+    public bool ToggleFavorite(LauncherResult result) => _usage.ToggleFavorite(result);
+
+    public bool IsFavorite(LauncherResult result) => _usage.IsFavorite(result.Target);
+
+    public void RemoveFromHistory(LauncherResult result) => _usage.Remove(result.Target);
 
     public void ShutdownEverything() => _everything.ShutdownClient();
 
@@ -97,6 +117,22 @@ public sealed class SearchCoordinator : IDisposable
 
     private static bool LooksLikeEverythingSyntax(string query) =>
         query.IndexOfAny([':', '*', '?', '|', '!', '<', '>', '"']) >= 0;
+
+    private static IReadOnlyDictionary<string, string> ParseAliases(string value)
+    {
+        var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in value.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var separator = line.IndexOf('=');
+            if (separator <= 0 || separator == line.Length - 1)
+                continue;
+            var alias = FuzzyMatcher.Prepare(line[..separator]).Normalized;
+            var target = line[(separator + 1)..].Trim();
+            if (alias.Length > 0 && target.Length > 0)
+                aliases[alias] = target;
+        }
+        return aliases;
+    }
 
     public void Dispose()
     {

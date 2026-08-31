@@ -26,6 +26,7 @@ public sealed class AppIndexService
 
     private readonly string _cachePath;
     private AppEntry[] _entries;
+    private string[] _customFolders = [];
     private int _ready;
 
     public AppIndexService()
@@ -38,6 +39,20 @@ public sealed class AppIndexService
 
     public bool IsReady => Volatile.Read(ref _ready) != 0;
     public int Count => Volatile.Read(ref _entries).Length;
+
+    public bool ConfigureCustomFolders(string value)
+    {
+        var folders = value.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(path => Environment.ExpandEnvironmentVariables(path.Trim().Trim('"').TrimEnd('*').TrimEnd(Path.DirectorySeparatorChar)))
+            .Where(Directory.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (_customFolders.SequenceEqual(folders, StringComparer.OrdinalIgnoreCase))
+            return false;
+        _customFolders = folders;
+        return true;
+    }
 
     public async Task InitializeAsync(CancellationToken token = default)
     {
@@ -52,18 +67,28 @@ public sealed class AppIndexService
 
     public async Task ReloadAsync(CancellationToken token = default)
     {
-        var entries = await Task.Run(() => BuildIndex(token), token).ConfigureAwait(false);
+        var customFolders = _customFolders;
+        var entries = await Task.Run(() => BuildIndex(customFolders, token), token).ConfigureAwait(false);
         Volatile.Write(ref _entries, entries);
         Volatile.Write(ref _ready, 1);
         await Task.Run(() => SaveCache(entries), CancellationToken.None).ConfigureAwait(false);
     }
 
-    public IReadOnlyList<LauncherResult> Search(FuzzyMatcher.PreparedQuery query, int maximumResults, UsageStore usage)
+    public IReadOnlyList<LauncherResult> Search(FuzzyMatcher.PreparedQuery query, int maximumResults, UsageStore usage,
+        IReadOnlyDictionary<string, string> aliases)
     {
         var matches = new List<LauncherResult>(Math.Min(32, Count));
+        var aliasTarget = aliases.GetValueOrDefault(query.Normalized);
+        var aliasQuery = string.IsNullOrWhiteSpace(aliasTarget) ? default : FuzzyMatcher.Prepare(aliasTarget);
         foreach (var entry in Volatile.Read(ref _entries))
         {
             var match = FuzzyMatcher.Score(query, entry.NormalizedTitle, entry.NormalizedSubtitle);
+            if (!string.IsNullOrWhiteSpace(aliasTarget))
+            {
+                var aliasMatch = FuzzyMatcher.Score(aliasQuery, entry.NormalizedTitle, entry.NormalizedSubtitle);
+                if (!double.IsNegativeInfinity(aliasMatch))
+                    match = Math.Max(match, aliasMatch + 700);
+            }
             if (double.IsNegativeInfinity(match))
                 continue;
             matches.Add(new LauncherResult
@@ -72,7 +97,8 @@ public sealed class AppIndexService
                 Subtitle = entry.Subtitle,
                 Target = entry.Target,
                 Kind = LauncherResultKind.Application,
-                Score = match + 180 + usage.GetBoost(entry.Target)
+                Score = match + 180 + usage.GetBoost(entry.Target),
+                IsFavorite = usage.IsFavorite(entry.Target)
             });
         }
 
@@ -86,7 +112,7 @@ public sealed class AppIndexService
         return matches;
     }
 
-    private static AppEntry[] BuildIndex(CancellationToken token)
+    private static AppEntry[] BuildIndex(IReadOnlyList<string> customFolders, CancellationToken token)
     {
         var entries = new Dictionary<string, AppEntry>(StringComparer.OrdinalIgnoreCase);
         AddFolder(entries, Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "开始菜单", recursive: true, token);
@@ -96,6 +122,17 @@ public sealed class AppIndexService
 
         var aliases = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WindowsApps");
         AddFolder(entries, aliases, "应用别名", recursive: false, token, executableAliasesOnly: true);
+
+        var pathFolders = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(path => Environment.ExpandEnvironmentVariables(path.Trim('"')))
+            .Where(Directory.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (var folder in pathFolders)
+            AddFolder(entries, folder, "PATH", recursive: false, token, executableAliasesOnly: true);
+
+        foreach (var folder in customFolders)
+            AddFolder(entries, folder, "自定义目录", recursive: false, token);
 
         AddRegistryApps(entries, RegistryHive.CurrentUser, RegistryView.Default, token);
         AddRegistryApps(entries, RegistryHive.LocalMachine, RegistryView.Registry64, token);

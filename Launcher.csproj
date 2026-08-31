@@ -11,6 +11,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>Luma</AssemblyName>
     <RootNamespace>LumaLauncher</RootNamespace>
+    <Version>0.2.0</Version>
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <DebugType>embedded</DebugType>
     <SatelliteResourceLanguages>zh-Hans;en</SatelliteResourceLanguages>

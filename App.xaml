@@ -66,5 +66,13 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!--Separator 风格：菜单里 Separator 是独立控件类型，绝不能套用 MenuItem 的 ItemContainerStyle，
+            否则容器生成时抛 InvalidOperationException（曾导致托盘右键后 UI 线程卡死）。-->
+        <Style x:Key="LumaMenuSeparator" TargetType="Separator">
+            <Setter Property="Background" Value="{DynamicResource StrokeBrush}"/>
+            <Setter Property="Margin" Value="8,4"/>
+            <Setter Property="Height" Value="1"/>
+        </Style>
     </Application.Resources>
 </Application>

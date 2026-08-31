@@ -100,11 +100,24 @@ internal sealed class TrayIconService : IDisposable
 
     private void ShowMenu()
     {
-        SetForegroundWindow(_window);
-        (_menu ??= CreateMenu()).IsOpen = true;
+        // Must not open the WPF Popup synchronously inside the Shell_NotifyIcon callback
+        // (WndProc): an exception there strands the native callback and wedges the UI thread.
+        // Defer to idle so the menu opens on a clean dispatcher stack.
+        var dispatcher = System.Windows.Application.Current.Dispatcher;
+        dispatcher.BeginInvoke(() =>
+        {
+            SetForegroundWindow(_window);
+            (_menu ??= CreateMenu()).IsOpen = true;
+        }, System.Windows.Threading.DispatcherPriority.Input);
     }
 
-    private ContextMenu CreateMenu()
+    private ContextMenu CreateMenu() => BuildMenu(
+        _toggleWindow, _openSettings, _reloadApps, _exit, _activeHotkey,
+        out _hotkeyItem);
+
+    /// <summary>构建托盘右键菜单。测试直接驱动此方法：验证 Separator 与 MenuItem 均能完成容器生成/布局而不抛异常。</summary>
+    internal static ContextMenu BuildMenu(Action toggleWindow, Action openSettings, Func<Task> reloadApps, Action exit,
+        string activeHotkey, out MenuItem hotkeyItem)
     {
         var resources = System.Windows.Application.Current;
         var menu = new ContextMenu
@@ -114,19 +127,23 @@ internal sealed class TrayIconService : IDisposable
             Foreground = (System.Windows.Media.Brush)resources.FindResource("TextBrush"),
             BorderBrush = (System.Windows.Media.Brush)resources.FindResource("StrokeBrush"),
             BorderThickness = new System.Windows.Thickness(1),
-            Padding = new System.Windows.Thickness(4),
-            ItemContainerStyle = (System.Windows.Style)resources.FindResource("LumaMenuItem")
+            Padding = new System.Windows.Thickness(4)
         };
-        menu.Items.Add(CreateItem("显示 Luma", _toggleWindow));
-        _hotkeyItem = new MenuItem { Header = $"快捷键  {_activeHotkey}", IsEnabled = false };
-        menu.Items.Add(_hotkeyItem);
-        menu.Items.Add(new Separator());
-        menu.Items.Add(CreateItem("设置", _openSettings));
-        menu.Items.Add(CreateAsyncItem("重建应用索引", _reloadApps));
-        menu.Items.Add(new Separator());
-        menu.Items.Add(CreateItem("退出", _exit));
+        menu.Items.Add(CreateItem("显示 Luma", toggleWindow));
+        hotkeyItem = new MenuItem { Header = $"快捷键  {activeHotkey}", IsEnabled = false, Style = MenuStyle() };
+        menu.Items.Add(hotkeyItem);
+        menu.Items.Add(CreateSeparator(resources));
+        menu.Items.Add(CreateItem("设置", openSettings));
+        menu.Items.Add(CreateAsyncItem("重建应用索引", reloadApps));
+        menu.Items.Add(CreateSeparator(resources));
+        menu.Items.Add(CreateItem("退出", exit));
         return menu;
     }
+
+    private static Separator CreateSeparator(System.Windows.Application resources) => new()
+    {
+        Style = (System.Windows.Style)resources.FindResource("LumaMenuSeparator")
+    };
 
     private NotifyIconData CreateData(uint flags) => new()
     {
@@ -143,14 +160,14 @@ internal sealed class TrayIconService : IDisposable
 
     private static MenuItem CreateItem(string title, Action action)
     {
-        var item = new MenuItem { Header = title };
+        var item = new MenuItem { Header = title, Style = MenuStyle() };
         item.Click += (_, _) => action();
         return item;
     }
 
     private static MenuItem CreateAsyncItem(string title, Func<Task> action)
     {
-        var item = new MenuItem { Header = title };
+        var item = new MenuItem { Header = title, Style = MenuStyle() };
         item.Click += async (_, _) =>
         {
             try { await action(); }
@@ -158,6 +175,9 @@ internal sealed class TrayIconService : IDisposable
         };
         return item;
     }
+
+    private static System.Windows.Style MenuStyle() =>
+        (System.Windows.Style)System.Windows.Application.Current.FindResource("LumaMenuItem");
 
     private static IntPtr ExtractApplicationIcon()
     {

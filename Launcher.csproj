@@ -28,4 +28,8 @@
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Luma.SmokeTests" />
+  </ItemGroup>
 </Project>

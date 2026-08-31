@@ -83,6 +83,9 @@ if (args.Contains("--lifecycle", StringComparer.OrdinalIgnoreCase))
     Require(await restartedEverything.EnsureRunningAsync(), "Everything should restart after a lifecycle shutdown.");
 }
 
+// Regression: tray right-click menu must build and lay out (see TrayMenuTests doc comment).
+LumaLauncher.Tests.TrayMenuTests.Run();
+
 Console.WriteLine($"PASS apps={apps.Count} index_ms={indexTimer.ElapsedMilliseconds} everything={everythingResult.Results.Count} combined={combined.Results.Count} search_p95_ms={p95}");
 return;
 

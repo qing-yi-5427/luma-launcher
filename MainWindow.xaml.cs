@@ -509,8 +509,7 @@ public sealed partial class MainWindow : Window
             Foreground = (System.Windows.Media.Brush)FindResource("TextBrush"),
             BorderBrush = (System.Windows.Media.Brush)FindResource("StrokeBrush"),
             BorderThickness = new Thickness(1),
-            Padding = new Thickness(4),
-            ItemContainerStyle = (Style)FindResource("LumaMenuItem")
+            Padding = new Thickness(4)
         };
         AddMenuItem(menu, selected.Kind == LauncherResultKind.Calculation ? "复制结果" : "打开", () => OpenSelected(false));
         if (selected.Kind is LauncherResultKind.Folder or LauncherResultKind.File && _quickSwitch.HasTarget)
@@ -532,7 +531,7 @@ public sealed partial class MainWindow : Window
             AddMenuItem(menu, "以管理员身份运行", () => OpenSelected(true));
         if (selected.Kind != LauncherResultKind.Calculation)
         {
-            menu.Items.Add(new Separator());
+            menu.Items.Add(new Separator { Style = (Style)FindResource("LumaMenuSeparator") });
             var favoriteTitle = _search.IsFavorite(selected) ? "取消收藏" : "加入收藏";
             AddMenuItem(menu, favoriteTitle, () => ToggleFavorite(selected));
             AddMenuItem(menu, "从最近使用中移除", () => RemoveFromHistory(selected));
@@ -545,7 +544,11 @@ public sealed partial class MainWindow : Window
 
     private static void AddMenuItem(System.Windows.Controls.ContextMenu menu, string title, Action action)
     {
-        var item = new System.Windows.Controls.MenuItem { Header = title };
+        var item = new System.Windows.Controls.MenuItem
+        {
+            Header = title,
+            Style = (Style)menu.FindResource("LumaMenuItem")
+        };
         item.Click += (_, _) => action();
         menu.Items.Add(item);
     }

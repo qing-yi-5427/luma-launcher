@@ -28,6 +28,7 @@ public sealed partial class SettingsWindow : Window
             ? "Connect"
             : "Managed";
         QuickSwitchBox.IsChecked = settings.EnableQuickSwitch;
+        ResultSortBox.SelectedValue = ResultRanker.Normalize(settings.ResultSort);
         AliasesBox.Text = settings.Aliases;
         AppFoldersBox.Text = settings.AppFolders;
         CommandsBox.Text = settings.CustomCommands;
@@ -61,7 +62,8 @@ public sealed partial class SettingsWindow : Window
             Aliases = AliasesBox.Text.Trim(),
             AppFolders = AppFoldersBox.Text.Trim(),
             CustomCommands = CommandsBox.Text.Trim(),
-            WebSearchUrl = _webSearchUrl
+            WebSearchUrl = _webSearchUrl,
+            ResultSort = ResultSortBox.SelectedValue as string ?? ResultRanker.Smart
         };
         try
         {

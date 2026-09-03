@@ -13,6 +13,7 @@ public sealed class AppSettings
     public string AppFolders { get; set; } = string.Empty;
     public string CustomCommands { get; set; } = string.Empty;
     public string WebSearchUrl { get; set; } = "https://www.bing.com/search?q={query}";
+    public string ResultSort { get; set; } = "Smart";
 
     public AppSettings Copy() => new()
     {
@@ -26,6 +27,7 @@ public sealed class AppSettings
         Aliases = Aliases,
         AppFolders = AppFolders,
         CustomCommands = CustomCommands,
-        WebSearchUrl = WebSearchUrl
+        WebSearchUrl = WebSearchUrl,
+        ResultSort = ResultSort
     };
 }

@@ -14,6 +14,36 @@ Require(FuzzyMatcher.Score(prepared, FuzzyMatcher.PrepareCandidate("Notepad"), s
 Require(!double.IsNegativeInfinity(FuzzyMatcher.Score("wx", "微信", string.Empty)),
     "Chinese application names should match their Pinyin initials.");
 
+var rankSamples = new[]
+{
+    new LauncherResult { Title = "Zulu", Subtitle = "", Target = "z", Kind = LauncherResultKind.File, Score = 120 },
+    new LauncherResult { Title = "Alpha", Subtitle = "", Target = "a", Kind = LauncherResultKind.Application, Score = 100 },
+    new LauncherResult { Title = "Beta", Subtitle = "", Target = "b", Kind = LauncherResultKind.File, Score = 90, IsFavorite = true }
+};
+var usageBoosts = new Dictionary<string, double> { ["z"] = 80, ["a"] = 0, ["b"] = 10 };
+double UsageBoost(string target) => usageBoosts.GetValueOrDefault(target);
+Require(ResultRanker.Rank(rankSamples, ResultRanker.Smart, 3, UsageBoost)[0].Target == "z",
+    "Smart sorting should use the combined score.");
+Require(ResultRanker.Rank(rankSamples, ResultRanker.Relevance, 3, UsageBoost)[0].Target == "a",
+    "Relevance sorting should exclude usage boosts.");
+Require(ResultRanker.Rank(rankSamples, ResultRanker.Usage, 3, UsageBoost)[0].Target == "b",
+    "Usage sorting should place favorites first.");
+Require(ResultRanker.Rank(rankSamples, ResultRanker.Name, 3, UsageBoost)[0].Target == "a",
+    "Name sorting should be alphabetical.");
+Require(ResultDetailsService.FormatSize(1536) == "1.5 KB",
+    "Result details should format file sizes compactly.");
+var calculationDetails = await ResultDetailsService.LoadAsync(new LauncherResult
+{
+    Title = "42",
+    Subtitle = "计算结果",
+    Target = "42",
+    Kind = LauncherResultKind.Calculation,
+    Score = 1,
+    CopyText = "42"
+}, CancellationToken.None);
+Require(calculationDetails.Kind == "计算结果" && calculationDetails.Location == "42",
+    "Result details should describe non-file results without file-system access.");
+
 using (var builtIns = new SearchCoordinator())
 {
     builtIns.Configure(new AppSettings
@@ -60,6 +90,18 @@ var syntax = await coordinator.SearchAsync("ext:exe", 8, CancellationToken.None)
 Require(syntax.EverythingAvailable && syntax.Results.Count > 0, "Everything syntax should not be removed by fuzzy filtering.");
 var expanded = await coordinator.SearchAsync("exe", 64, CancellationToken.None);
 Require(expanded.Results.Count > 8, "Expanded searches should provide enough results for paging and filters.");
+var fullView = await coordinator.SearchAsync("exe", 128, CancellationToken.None);
+Require(fullView.Results.Count > 64, "Full-result searches should not be capped at 64 items.");
+coordinator.Configure(new AppSettings { ResultSort = ResultRanker.Name });
+var alphabetical = await coordinator.SearchAsync("Windows", 16, CancellationToken.None);
+var expectedAlphabetical = alphabetical.Results
+    .OrderBy(result => result.Title, StringComparer.CurrentCultureIgnoreCase)
+    .ThenBy(result => result.Kind)
+    .Select(result => result.Target)
+    .ToArray();
+Require(alphabetical.Results.Select(result => result.Target).SequenceEqual(expectedAlphabetical),
+    "Name sorting should be applied by the search coordinator.");
+coordinator.Configure(new AppSettings());
 
 var latencies = new List<long>();
 foreach (var query in new[] { "win", "windows", "note", "exe", "program", "system" })

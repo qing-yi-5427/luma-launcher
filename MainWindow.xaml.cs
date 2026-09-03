@@ -14,15 +14,22 @@ public sealed partial class MainWindow : Window
 {
     private const double CompactHeight = 94;
     private const double ExpandedHeight = 560;
+    private const double CompactWidth = 700;
+    private const double FullResultsWidth = 1040;
+    private const double FullResultsHeight = 680;
     private const int PageSize = 8;
-    private const int SearchResultLimit = 64;
+    private const int QuickSearchResultLimit = 64;
+    private const int FullSearchResultLimit = 512;
+    private const int SearchDebounceMilliseconds = 250;
     private readonly ObservableCollection<LauncherResult> _results = [];
     private readonly List<LauncherResult> _allResults = [];
+    private readonly HashSet<LauncherResult> _iconLoads = [];
     private readonly SearchCoordinator _search = new();
     private readonly QuickSwitchService _quickSwitch = new();
     private readonly SettingsStore _settings;
     private readonly HotkeyService _hotkey = new();
     private CancellationTokenSource? _searchCancellation;
+    private CancellationTokenSource? _detailCancellation;
     private CancellationTokenSource? _idleMaintenanceCancellation;
     private HwndSource? _source;
     private HotkeyRegistration? _registration;
@@ -32,6 +39,9 @@ public sealed partial class MainWindow : Window
     private string _activeFilter = "All";
     private string _batchStatus = string.Empty;
     private int _pageIndex;
+    private bool _searchPending;
+    private bool _fullResultsMode;
+    private long _detailGeneration;
     private DateTimeOffset _ignoreDeactivateUntil;
 
     internal Func<int, IntPtr, IntPtr, bool>? TrayMessageHandler { get; set; }
@@ -136,6 +146,8 @@ public sealed partial class MainWindow : Window
     public void HideLauncher()
     {
         _searchCancellation?.Cancel();
+        if (_fullResultsMode)
+            LeaveFullResultsMode(animate: false);
         Hide();
         ScheduleIdleTrim();
     }
@@ -198,9 +210,14 @@ public sealed partial class MainWindow : Window
         return IntPtr.Zero;
     }
 
-    private async void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         SearchHint.Visibility = SearchBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _ = SearchCurrentTextAsync(SearchDebounceMilliseconds);
+    }
+
+    private async Task<bool> SearchCurrentTextAsync(int delayMilliseconds)
+    {
         _searchCancellation?.Cancel();
         _searchCancellation?.Dispose();
         _searchCancellation = new CancellationTokenSource();
@@ -209,35 +226,65 @@ public sealed partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(SearchBox.Text))
         {
+            SetSearchPending(false);
             await ShowRecommendationsAsync();
-            return;
+            return false;
         }
 
-        SetExpanded(0, showBody: true);
-        _allResults.Clear();
-        _results.Clear();
-        MoreButton.Visibility = Visibility.Collapsed;
-        EmptyText.Text = "正在搜索…";
-        EmptyText.Visibility = Visibility.Visible;
-        ResultsList.Visibility = Visibility.Collapsed;
-        StatusText.Text = "Everything + 应用";
+        var pendingQuery = SearchBox.Text.Trim();
+        SetSearchPending(true);
 
         try
         {
-            await Task.Delay(65, token);
-            var query = SearchBox.Text.Trim();
-            var batch = await _search.SearchAsync(query, SearchResultLimit, token);
-            if (generation != _searchGeneration || !query.Equals(SearchBox.Text.Trim(), StringComparison.Ordinal))
-                return;
+            await Task.Delay(delayMilliseconds, token);
+            if (generation != _searchGeneration || !pendingQuery.Equals(SearchBox.Text.Trim(), StringComparison.Ordinal))
+                return false;
+
+            var keepExistingResults = _fullResultsMode && _allResults.Count > 0;
+            SetExpanded(keepExistingResults ? _results.Count : 0, showBody: true);
+            if (!keepExistingResults)
+            {
+                _allResults.Clear();
+                _results.Clear();
+                MoreButton.Visibility = Visibility.Collapsed;
+                EmptyText.Text = "正在搜索…";
+                EmptyText.Visibility = Visibility.Visible;
+                ResultsList.Visibility = Visibility.Collapsed;
+            }
+            StatusText.Text = keepExistingResults ? "正在加载更多结果…" : "Everything + 应用";
+
+            var resultLimit = _fullResultsMode ? FullSearchResultLimit : QuickSearchResultLimit;
+            var batch = await _search.SearchAsync(pendingQuery, resultLimit, token);
+            if (generation != _searchGeneration || !pendingQuery.Equals(SearchBox.Text.Trim(), StringComparison.Ordinal))
+                return false;
             ApplyBatch(batch, "没有找到匹配项");
-            _ = LoadIconsAsync(_results.ToList(), generation, token);
+            return true;
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) { return false; }
         catch (Exception exception) when (generation == _searchGeneration)
         {
             DiagnosticsService.Log("search", exception);
             ApplyBatch(new SearchBatch([], "搜索暂时不可用", false), "搜索暂时不可用，请稍后重试");
             SetExpanded(0, showBody: true);
+            return false;
+        }
+        finally
+        {
+            if (generation == _searchGeneration)
+                SetSearchPending(false);
+        }
+    }
+
+    private void SetSearchPending(bool pending)
+    {
+        _searchPending = pending;
+        ResultsHost.IsHitTestVisible = !pending;
+        ResultsHost.Opacity = pending ? 0.55 : 1;
+        if (pending)
+        {
+            ResultsList.SelectedIndex = -1;
+            if (_allResults.Count > 0)
+                StatusText.Text = "等待输入完成…";
         }
     }
 
@@ -247,11 +294,11 @@ public sealed partial class MainWindow : Window
         var token = _searchCancellation?.Token ?? CancellationToken.None;
         try
         {
-            var batch = await _search.GetRecommendationsAsync(SearchResultLimit, token);
+            var resultLimit = _fullResultsMode ? FullSearchResultLimit : QuickSearchResultLimit;
+            var batch = await _search.GetRecommendationsAsync(resultLimit, token);
             if (generation != _searchGeneration || SearchBox.Text.Length != 0)
                 return;
             ApplyBatch(batch, "输入应用、文件名或 Everything 语法");
-            _ = LoadIconsAsync(_results.ToList(), generation, token);
         }
         catch (OperationCanceledException) { }
     }
@@ -272,15 +319,21 @@ public sealed partial class MainWindow : Window
         _pageIndex = Math.Clamp(_pageIndex, 0, pageCount - 1);
 
         _results.Clear();
-        foreach (var result in filtered.Skip(_pageIndex * PageSize).Take(PageSize))
+        var visibleResults = _fullResultsMode
+            ? filtered
+            : filtered.Skip(_pageIndex * PageSize).Take(PageSize);
+        foreach (var result in visibleResults)
             _results.Add(result);
         ResultsList.SelectedIndex = _results.Count > 0 ? 0 : -1;
         EmptyText.Text = emptyMessage;
         EmptyText.Visibility = _results.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ResultsList.Visibility = _results.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         StatusText.Text = filtered.Count == 0 ? _batchStatus : $"{filtered.Count} 个结果 · {_batchStatus}";
-        MoreButton.Visibility = filtered.Count > PageSize ? Visibility.Visible : Visibility.Collapsed;
-        MoreButton.Content = pageCount > 1 ? $"{_pageIndex + 1}/{pageCount}  更多" : "更多";
+        SortModeText.Text = $"{filtered.Count} 条 · {GetSortModeLabel(_settings.Current.ResultSort)}排序";
+        MoreButton.Visibility = _fullResultsMode || filtered.Count > 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        MoreButton.Content = _fullResultsMode ? "收起" : "查看全部";
         UpdateFilterButtons();
         SetExpanded(_results.Count, _allResults.Count > 0 || SearchBox.Text.Length > 0);
     }
@@ -303,20 +356,24 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task LoadIconsAsync(IReadOnlyList<LauncherResult> results, long generation, CancellationToken token)
+    private async void ResultItem_Loaded(object sender, RoutedEventArgs e)
     {
-        if (results.Count == 0)
+        if (sender is not FrameworkElement { DataContext: LauncherResult result } ||
+            result.Icon is not null || !_iconLoads.Add(result))
             return;
+
+        var generation = _searchGeneration;
+        var token = _searchCancellation?.Token ?? CancellationToken.None;
         try
         {
-            var icons = await _search.LoadIconsAsync(results, token);
+            var icon = await _search.LoadIconAsync(result, token);
             if (generation != _searchGeneration || token.IsCancellationRequested)
                 return;
-            for (var index = 0; index < results.Count; index++)
-                results[index].Icon = icons[index];
+            result.Icon = icon;
         }
         catch (OperationCanceledException) { }
         catch (Exception exception) { DiagnosticsService.Log("icon-hydration", exception); }
+        finally { _iconLoads.Remove(result); }
     }
 
     private void SetExpanded(int resultCount, bool showBody)
@@ -325,19 +382,58 @@ public sealed partial class MainWindow : Window
         FooterRow.Height = new GridLength(showBody ? 38 : 0);
         ResultsHost.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
         Footer.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
-        var resultArea = 36 + (resultCount > 0 ? Math.Min(PageSize, resultCount) * 48 + 8 : 72);
-        var targetHeight = showBody ? Math.Min(ExpandedHeight, CompactHeight + resultArea + 38) : CompactHeight;
+        var resultArea = 36 + (resultCount > 0 ? Math.Min(PageSize, resultCount) * 50 + 8 : 72);
+        var targetHeight = _fullResultsMode
+            ? GetFullResultsSize().Height
+            : showBody ? Math.Min(ExpandedHeight, CompactHeight + resultArea + 38) : CompactHeight;
+        var targetWidth = _fullResultsMode ? GetFullResultsSize().Width : CompactWidth;
+        AnimateWindowSize(targetWidth, targetHeight);
+    }
+
+    private void AnimateWindowSize(double targetWidth, double targetHeight)
+    {
         if (!SystemParameters.ClientAreaAnimation)
         {
+            BeginAnimation(WidthProperty, null);
             BeginAnimation(HeightProperty, null);
+            Width = targetWidth;
             Height = targetHeight;
+            PositionOnCursorMonitor();
             return;
         }
-        var animation = new DoubleAnimation(targetHeight, TimeSpan.FromMilliseconds(135))
+
+        var duration = TimeSpan.FromMilliseconds(_fullResultsMode ? 175 : 135);
+        if (Math.Abs(ActualWidth - targetWidth) > 0.5)
+        {
+            var startWidth = ActualWidth;
+            Width = targetWidth;
+            var widthAnimation = new DoubleAnimation(startWidth, targetWidth, duration)
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+            widthAnimation.Completed += (_, _) => PositionOnCursorMonitor();
+            BeginAnimation(WidthProperty, widthAnimation, HandoffBehavior.SnapshotAndReplace);
+        }
+
+        var heightAnimation = new DoubleAnimation(targetHeight, duration)
         {
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
-        BeginAnimation(HeightProperty, animation, HandoffBehavior.SnapshotAndReplace);
+        BeginAnimation(HeightProperty, heightAnimation, HandoffBehavior.SnapshotAndReplace);
+    }
+
+    private (double Width, double Height) GetFullResultsSize()
+    {
+        if (!NativeMethods.TryGetCursorWorkArea(out var area))
+            return (FullResultsWidth, FullResultsHeight);
+        var fromDevice = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformFromDevice;
+        var scaleX = fromDevice?.M11 ?? 1;
+        var scaleY = fromDevice?.M22 ?? 1;
+        var availableWidth = (area.Right - area.Left) * scaleX - 48;
+        var availableHeight = (area.Bottom - area.Top) * scaleY - 64;
+        return (
+            Math.Max(CompactWidth, Math.Min(FullResultsWidth, availableWidth)),
+            Math.Max(ExpandedHeight, Math.Min(FullResultsHeight, availableHeight)));
     }
 
     private void AnimateShow()
@@ -362,16 +458,58 @@ public sealed partial class MainWindow : Window
         _activeFilter = filter;
         _pageIndex = 0;
         ApplyCurrentPage();
-        _ = LoadIconsAsync(_results.ToList(), _searchGeneration, _searchCancellation?.Token ?? CancellationToken.None);
     }
 
     private void MoreButton_Click(object sender, RoutedEventArgs e)
     {
-        var filteredCount = _allResults.Count(MatchesActiveFilter);
-        var pageCount = Math.Max(1, (int)Math.Ceiling(filteredCount / (double)PageSize));
-        _pageIndex = (_pageIndex + 1) % pageCount;
+        if (_fullResultsMode)
+            LeaveFullResultsMode();
+        else
+            EnterFullResultsMode();
+    }
+
+    private void EnterFullResultsMode()
+    {
+        if (_fullResultsMode)
+            return;
+        _fullResultsMode = true;
+        ResultsPaneColumn.Width = new GridLength(0.58, GridUnitType.Star);
+        DetailsDividerColumn.Width = new GridLength(21);
+        DetailsPaneColumn.Width = new GridLength(0.42, GridUnitType.Star);
+        DetailsDivider.Visibility = Visibility.Visible;
+        DetailsPane.Visibility = Visibility.Visible;
+        SortModeText.Visibility = Visibility.Visible;
+        _pageIndex = 0;
         ApplyCurrentPage();
-        _ = LoadIconsAsync(_results.ToList(), _searchGeneration, _searchCancellation?.Token ?? CancellationToken.None);
+        if (!string.IsNullOrWhiteSpace(SearchBox.Text) && _allResults.Count >= QuickSearchResultLimit)
+            _ = SearchCurrentTextAsync(0);
+    }
+
+    private void LeaveFullResultsMode(bool animate = true)
+    {
+        if (!_fullResultsMode)
+            return;
+        _fullResultsMode = false;
+        _detailCancellation?.Cancel();
+        ResultsPaneColumn.Width = new GridLength(1, GridUnitType.Star);
+        DetailsDividerColumn.Width = new GridLength(0);
+        DetailsPaneColumn.Width = new GridLength(0);
+        DetailsDivider.Visibility = Visibility.Collapsed;
+        DetailsPane.Visibility = Visibility.Collapsed;
+        SortModeText.Visibility = Visibility.Collapsed;
+        _pageIndex = 0;
+        ApplyCurrentPage();
+        if (!animate)
+        {
+            BeginAnimation(WidthProperty, null);
+            BeginAnimation(HeightProperty, null);
+            Width = CompactWidth;
+            var showBody = _allResults.Count > 0 || SearchBox.Text.Length > 0;
+            var resultArea = 36 + (_results.Count > 0 ? Math.Min(PageSize, _results.Count) * 50 + 8 : 72);
+            Height = showBody ? Math.Min(ExpandedHeight, CompactHeight + resultArea + 38) : CompactHeight;
+        }
+        SearchBox.Focus();
+        Keyboard.Focus(SearchBox);
     }
 
     private void PositionOnCursorMonitor()
@@ -382,13 +520,24 @@ public sealed partial class MainWindow : Window
         if (!NativeMethods.GetWindowRect(handle, out var rectangle))
             return;
         var windowWidth = rectangle.Right - rectangle.Left;
+        var windowHeight = rectangle.Bottom - rectangle.Top;
         var areaWidth = area.Right - area.Left;
         var areaHeight = area.Bottom - area.Top;
-        var x = area.Left + (areaWidth - windowWidth) / 2;
-        var y = area.Top + Math.Max(42, (int)(areaHeight * 0.13));
+        var centeredX = area.Left + (areaWidth - windowWidth) / 2;
+        var x = Math.Max(area.Left + 12, Math.Min(centeredX, area.Right - windowWidth - 12));
+        var preferredY = area.Top + Math.Max(42, (int)(areaHeight * 0.13));
+        var y = Math.Max(area.Top + 12, Math.Min(preferredY, area.Bottom - windowHeight - 20));
         NativeMethods.SetWindowPos(handle, IntPtr.Zero, x, y, 0, 0,
             NativeMethods.SwpNoSize | NativeMethods.SwpNoZOrder | NativeMethods.SwpNoActivate);
     }
+
+    private static string GetSortModeLabel(string? mode) => ResultRanker.Normalize(mode) switch
+    {
+        ResultRanker.Relevance => "匹配度",
+        ResultRanker.Usage => "常用与收藏",
+        ResultRanker.Name => "名称 A–Z",
+        _ => "智能"
+    };
 
     private static void ApplyDwmStyling(IntPtr handle)
     {
@@ -402,12 +551,15 @@ public sealed partial class MainWindow : Window
     {
         if (e.Key == Key.Escape)
         {
-            HideLauncher();
+            if (_fullResultsMode)
+                LeaveFullResultsMode();
+            else
+                HideLauncher();
             e.Handled = true;
             return;
         }
 
-        if (e.Key is Key.Down or Key.Up && _results.Count > 0)
+        if (e.Key is Key.Down or Key.Up && _results.Count > 0 && !_searchPending)
         {
             var delta = e.Key == Key.Down ? 1 : -1;
             var next = (ResultsList.SelectedIndex + delta + _results.Count) % _results.Count;
@@ -417,17 +569,22 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (e.Key is Key.PageDown or Key.PageUp && MoreButton.Visibility == Visibility.Visible)
+        if (e.Key is Key.PageDown or Key.PageUp && !_searchPending)
         {
-            var filteredCount = _allResults.Count(MatchesActiveFilter);
-            var pageCount = Math.Max(1, (int)Math.Ceiling(filteredCount / (double)PageSize));
-            _pageIndex = e.Key == Key.PageDown
-                ? (_pageIndex + 1) % pageCount
-                : (_pageIndex - 1 + pageCount) % pageCount;
-            ApplyCurrentPage();
-            _ = LoadIconsAsync(_results.ToList(), _searchGeneration, _searchCancellation?.Token ?? CancellationToken.None);
-            e.Handled = true;
-            return;
+            if (_fullResultsMode && _results.Count > 0)
+            {
+                var delta = e.Key == Key.PageDown ? PageSize : -PageSize;
+                ResultsList.SelectedIndex = Math.Clamp(ResultsList.SelectedIndex + delta, 0, _results.Count - 1);
+                ResultsList.ScrollIntoView(ResultsList.SelectedItem);
+                e.Handled = true;
+                return;
+            }
+            if (!_fullResultsMode && MoreButton.Visibility == Visibility.Visible)
+            {
+                EnterFullResultsMode();
+                e.Handled = true;
+                return;
+            }
         }
 
         if (e.Key == Key.G && Keyboard.Modifiers == ModifierKeys.Control)
@@ -440,12 +597,13 @@ public sealed partial class MainWindow : Window
         if (e.Key == Key.Enter)
         {
             var modifiers = Keyboard.Modifiers;
-            if (modifiers.HasFlag(ModifierKeys.Control) && modifiers.HasFlag(ModifierKeys.Shift))
-                OpenSelected(runAsAdministrator: true);
-            else if (modifiers.HasFlag(ModifierKeys.Control))
-                RevealSelected();
-            else
-                OpenSelected(runAsAdministrator: false);
+            if (_searchPending)
+            {
+                _ = SearchAndExecuteAsync(modifiers);
+                e.Handled = true;
+                return;
+            }
+            ExecuteSelected(modifiers);
             e.Handled = true;
             return;
         }
@@ -470,6 +628,22 @@ public sealed partial class MainWindow : Window
             OpenSettings();
             e.Handled = true;
         }
+    }
+
+    private async Task SearchAndExecuteAsync(ModifierKeys modifiers)
+    {
+        if (await SearchCurrentTextAsync(delayMilliseconds: 0))
+            ExecuteSelected(modifiers);
+    }
+
+    private void ExecuteSelected(ModifierKeys modifiers)
+    {
+        if (modifiers.HasFlag(ModifierKeys.Control) && modifiers.HasFlag(ModifierKeys.Shift))
+            OpenSelected(runAsAdministrator: true);
+        else if (modifiers.HasFlag(ModifierKeys.Control))
+            RevealSelected();
+        else
+            OpenSelected(runAsAdministrator: false);
     }
 
     private void OpenSelected(bool runAsAdministrator)
@@ -591,7 +765,12 @@ public sealed partial class MainWindow : Window
     {
         var favorite = _search.ToggleFavorite(selected);
         selected.IsFavorite = favorite;
+        if (_fullResultsMode)
+            DetailFavoriteButton.Content = favorite ? "取消收藏" : "收藏";
         StatusText.Text = favorite ? "已加入收藏" : "已取消收藏";
+        if (_settings.Current.ResultSort.Equals(ResultRanker.Usage, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(SearchBox.Text))
+            _ = SearchCurrentTextAsync(delayMilliseconds: 0);
     }
 
     private void RemoveFromHistory(LauncherResult selected)
@@ -605,8 +784,105 @@ public sealed partial class MainWindow : Window
     private void ResultsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ResultsList.SelectedItem is LauncherResult selected)
+        {
             StatusText.Text = selected.Target;
+            UpdateDetailActions(selected);
+            if (_fullResultsMode)
+                _ = LoadSelectedDetailsAsync(selected);
+        }
+        else
+        {
+            _detailCancellation?.Cancel();
+            ClearDetailPanel();
+        }
     }
+
+    private async Task LoadSelectedDetailsAsync(LauncherResult selected)
+    {
+        _detailCancellation?.Cancel();
+        _detailCancellation?.Dispose();
+        _detailCancellation = new CancellationTokenSource();
+        var token = _detailCancellation.Token;
+        var generation = Interlocked.Increment(ref _detailGeneration);
+
+        DetailKindText.Text = selected.SourceLabel;
+        DetailLocationText.Text = selected.Target;
+        DetailSizeText.Text = "正在读取…";
+        DetailModifiedText.Text = "正在读取…";
+        DetailDescriptionText.Text = selected.Subtitle;
+
+        try
+        {
+            var details = await ResultDetailsService.LoadAsync(selected, token);
+            if (!_fullResultsMode || generation != _detailGeneration ||
+                !ReferenceEquals(ResultsList.SelectedItem, selected))
+                return;
+            DetailKindText.Text = details.Kind.ToUpperInvariant();
+            DetailLocationText.Text = details.Location;
+            DetailSizeText.Text = details.Size;
+            DetailModifiedText.Text = details.Modified;
+            DetailDescriptionText.Text = details.Description;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception)
+        {
+            DiagnosticsService.Log("result-details", exception);
+            if (generation == _detailGeneration)
+            {
+                DetailSizeText.Text = "—";
+                DetailModifiedText.Text = "—";
+                DetailDescriptionText.Text = "暂时无法读取详细信息。";
+            }
+        }
+    }
+
+    private void UpdateDetailActions(LauncherResult selected)
+    {
+        DetailActionsPanel.Visibility = Visibility.Visible;
+        DetailOpenButton.Content = selected.Kind == LauncherResultKind.Calculation ? "复制结果" : "打开";
+        DetailCopyButton.Content = selected.Kind == LauncherResultKind.Calculation ? "复制结果" : "复制路径";
+        DetailRevealButton.Visibility = selected.IsFileSystemItem ? Visibility.Visible : Visibility.Collapsed;
+        DetailAdminButton.Visibility = selected.CanRunAsAdministrator ? Visibility.Visible : Visibility.Collapsed;
+        DetailQuickSwitchButton.Visibility = selected.Kind is LauncherResultKind.File or LauncherResultKind.Folder && _quickSwitch.HasTarget
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        DetailFavoriteButton.Visibility = selected.Kind == LauncherResultKind.Calculation
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        DetailFavoriteButton.Content = _search.IsFavorite(selected) ? "取消收藏" : "收藏";
+    }
+
+    private void ClearDetailPanel()
+    {
+        DetailKindText.Text = "未选择结果";
+        DetailLocationText.Text = "—";
+        DetailSizeText.Text = "—";
+        DetailModifiedText.Text = "—";
+        DetailDescriptionText.Text = "选择左侧结果以查看详细信息。";
+        DetailActionsPanel.Visibility = Visibility.Collapsed;
+    }
+
+    private void DetailOpen_Click(object sender, RoutedEventArgs e) => OpenSelected(false);
+
+    private void DetailReveal_Click(object sender, RoutedEventArgs e) => RevealSelected();
+
+    private void DetailCopy_Click(object sender, RoutedEventArgs e)
+    {
+        if (ResultsList.SelectedItem is not LauncherResult selected)
+            return;
+        ResultExecutionService.CopyPath(selected);
+        StatusText.Text = selected.Kind == LauncherResultKind.Calculation ? "已复制结果" : "已复制路径";
+    }
+
+    private void DetailFavorite_Click(object sender, RoutedEventArgs e)
+    {
+        if (ResultsList.SelectedItem is LauncherResult selected)
+            ToggleFavorite(selected);
+    }
+
+    private void DetailQuickSwitch_Click(object sender, RoutedEventArgs e) => _ = QuickSwitchSelectedAsync();
+
+    private void DetailAdmin_Click(object sender, RoutedEventArgs e) => OpenSelected(true);
 
     private void Window_Deactivated(object sender, EventArgs e)
     {
@@ -656,6 +932,8 @@ public sealed partial class MainWindow : Window
         _idleMaintenanceCancellation?.Dispose();
         _searchCancellation?.Cancel();
         _searchCancellation?.Dispose();
+        _detailCancellation?.Cancel();
+        _detailCancellation?.Dispose();
         _search.Dispose();
         _hotkey.Unregister();
         _source?.RemoveHook(WindowProcedure);

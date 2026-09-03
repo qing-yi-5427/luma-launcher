@@ -8,7 +8,10 @@ or run a privileged indexing service.
 ## Features
 
 - Unified application, file and folder search with fuzzy and Pinyin-initial matching
-- Up to 64 ranked results with category filters and keyboard paging
+- 250 ms cancellable input debounce, with Enter available to search immediately
+- Fast 64-result preview, expanding to as many as 512 ranked results in the full view
+- Expandable full-results view with scrolling, file metadata and contextual actions
+- Smart, relevance, usage/favorites, or alphabetical result ordering
 - Favorites, recent usage ranking, application aliases and portable-app folders
 - Calculator (`= 12 * 8`), URLs, web search (`? query`) and custom commands
 - File actions: reveal, copy, open with, properties, terminal and administrator launch
@@ -61,11 +64,11 @@ installation. Everything itself is still required for indexed file search.
 - `Ctrl+Enter`: reveal in File Explorer
 - `Ctrl+Shift+Enter`: run as administrator
 - `Ctrl+C`: copy the selected path
-- `PageUp` / `PageDown`: move between result pages
+- `PageUp` / `PageDown`: open the full-results view or move by one result page
 - `Ctrl+G`: switch an Open/Save dialog to the selected folder
 - `Right` or `Ctrl+O`: actions
 - `Ctrl+,`: settings
-- `Escape`: hide
+- `Escape`: leave the full-results view, then hide
 
 Drag the launcher from the search icon, shortcut badge, or other empty chrome.
 

@@ -4,6 +4,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using LumaLauncher;
+using LumaLauncher.Models;
+using LumaLauncher.Services;
 
 namespace LumaLauncher.Tests;
 
@@ -81,5 +83,64 @@ internal static class TrayMenuTests
 
         if (!double.IsFinite(menu.DesiredSize.Height) || menu.DesiredSize.Height <= 0)
             throw new InvalidOperationException($"托盘菜单测量尺寸异常：{menu.DesiredSize}");
+
+        VerifyFullResultsLayout();
+    }
+
+    private static void VerifyFullResultsLayout()
+    {
+        var launcher = new MainWindow(new SettingsStore());
+        try
+        {
+            var enter = typeof(MainWindow).GetMethod("EnterFullResultsMode",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("找不到完整结果模式入口");
+            var leave = typeof(MainWindow).GetMethod("LeaveFullResultsMode",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("找不到完整结果模式出口");
+            var apply = typeof(MainWindow).GetMethod("ApplyCurrentPage",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("找不到结果刷新入口");
+            var allResultsField = typeof(MainWindow).GetField("_allResults",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("找不到完整结果集合");
+            var details = launcher.FindName("DetailsPane") as FrameworkElement
+                ?? throw new InvalidOperationException("找不到结果详情面板");
+            var more = launcher.FindName("MoreButton") as Button
+                ?? throw new InvalidOperationException("找不到完整结果按钮");
+            var results = launcher.FindName("ResultsList") as ListBox
+                ?? throw new InvalidOperationException("找不到结果列表");
+
+            var allResults = allResultsField.GetValue(launcher) as List<LauncherResult>
+                ?? throw new InvalidOperationException("完整结果集合类型异常");
+            for (var index = 0; index < 12; index++)
+            {
+                allResults.Add(new LauncherResult
+                {
+                    Title = $"测试结果 {index + 1}",
+                    Subtitle = "布局回归测试",
+                    Target = $@"C:\Test\item-{index + 1}.txt",
+                    Kind = LauncherResultKind.File,
+                    Score = 100 - index
+                });
+            }
+            apply.Invoke(launcher, ["没有结果"]);
+
+            enter.Invoke(launcher, null);
+            launcher.Measure(new Size(1040, 680));
+            launcher.Arrange(new Rect(0, 0, 1040, 680));
+            launcher.UpdateLayout();
+            if (details.Visibility != Visibility.Visible || !Equals(more.Content, "收起") || results.Items.Count != 12)
+                throw new InvalidOperationException("完整结果模式未正确展开");
+
+            leave.Invoke(launcher, [true]);
+            launcher.UpdateLayout();
+            if (details.Visibility != Visibility.Collapsed || !Equals(more.Content, "查看全部"))
+                throw new InvalidOperationException("完整结果模式未正确收起");
+        }
+        finally
+        {
+            launcher.CloseForExit();
+        }
     }
 }

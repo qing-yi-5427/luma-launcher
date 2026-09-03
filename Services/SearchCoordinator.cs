@@ -11,6 +11,7 @@ public sealed class SearchCoordinator : IDisposable
     private readonly BuiltInSearchService _builtIns = new();
     private IReadOnlyDictionary<string, string> _aliases = new Dictionary<string, string>();
     private Task? _initializeTask;
+    private string _resultSort = ResultRanker.Smart;
 
     public bool IsInitialized => _apps.IsReady;
 
@@ -22,6 +23,7 @@ public sealed class SearchCoordinator : IDisposable
         _everything.Configure(settings.EverythingPathMode, settings.EverythingPath, settings.EverythingLifecycle);
         _builtIns.Configure(settings);
         _aliases = ParseAliases(settings.Aliases);
+        _resultSort = ResultRanker.Normalize(settings.ResultSort);
         return _apps.ConfigureCustomFolders(settings.AppFolders);
     }
 
@@ -45,8 +47,14 @@ public sealed class SearchCoordinator : IDisposable
         }
 
         var preparedQuery = FuzzyMatcher.Prepare(query);
-        var appTask = Task.Run(() => _apps.Search(preparedQuery, maximumResults, _usage, _aliases), token);
-        var fileTask = _everything.SearchAsync(query, Math.Max(maximumResults * 5, 40), token);
+        var appCandidateLimit = ResultRanker.NeedsWideCandidateSet(_resultSort)
+            ? Math.Max(maximumResults, _apps.Count)
+            : maximumResults;
+        var appTask = Task.Run(() => _apps.Search(preparedQuery, appCandidateLimit, _usage, _aliases), token);
+        var fileCandidateLimit = maximumResults <= 64
+            ? Math.Max(maximumResults * 5, 40)
+            : Math.Max(maximumResults * 2, 512);
+        var fileTask = _everything.SearchAsync(query, fileCandidateLimit, token);
         await Task.WhenAll(appTask, fileTask).ConfigureAwait(false);
 
         var all = new List<LauncherResult>(appTask.Result.Count + fileTask.Result.Results.Count);
@@ -73,16 +81,13 @@ public sealed class SearchCoordinator : IDisposable
             });
         }
 
-        var ranked = all
+        var unique = all
             .GroupBy(result => result.Kind == LauncherResultKind.Application
                 ? $"app::{result.Title}"
                 : result.Target, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.OrderByDescending(result => result.Score).First())
-            .OrderByDescending(result => result.Score)
-            .ThenBy(result => result.Title.Length)
-            .ThenBy(result => result.Title, StringComparer.CurrentCultureIgnoreCase)
-            .Take(maximumResults)
+            .Select(group => ResultRanker.Rank(group, _resultSort, 1, _usage.GetBoost)[0])
             .ToList();
+        var ranked = ResultRanker.Rank(unique, _resultSort, maximumResults, _usage.GetBoost);
 
         var source = fileTask.Result.Available ? "Everything + 应用" : $"仅应用 · {fileTask.Result.StatusText}";
         return new SearchBatch(ranked, source, fileTask.Result.Available);
@@ -106,12 +111,8 @@ public sealed class SearchCoordinator : IDisposable
 
     public void ShutdownEverything() => _everything.ShutdownClient();
 
-    public async Task<IReadOnlyList<System.Windows.Media.ImageSource?>> LoadIconsAsync(
-        IReadOnlyList<LauncherResult> results, CancellationToken token)
-    {
-        var tasks = results.Select(result => _icons.GetAsync(result.Target, token));
-        return await Task.WhenAll(tasks).ConfigureAwait(false);
-    }
+    public Task<System.Windows.Media.ImageSource?> LoadIconAsync(LauncherResult result, CancellationToken token) =>
+        _icons.GetAsync(result.Target, token);
 
     public void TrimCaches() => _icons.Trim();
 

@@ -5,6 +5,15 @@ namespace LumaLauncher.Services;
 
 public static class ThemeService
 {
+    private static string _requestedTheme = "System";
+    public static void StartFollowingSystem() => SystemEvents.UserPreferenceChanged += PreferenceChanged;
+    public static void StopFollowingSystem() => SystemEvents.UserPreferenceChanged -= PreferenceChanged;
+    private static void PreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+    {
+        var app = System.Windows.Application.Current;
+        if (app is not null && !app.Dispatcher.HasShutdownStarted)
+            app.Dispatcher.BeginInvoke(() => Apply(_requestedTheme));
+    }
     private sealed record Palette(
         string Window, string Panel, string Hover, string Selected,
         string Text, string Muted, string Faint, string Stroke,
@@ -12,12 +21,12 @@ public static class ThemeService
 
     private static readonly Palette LumaDark = new(
         "#F3121519", "#FF1A1E23", "#FF22272D", "#FF282C2D",
-        "#FFF4F1EA", "#FF969A9E", "#FF656A70", "#FF30353B",
+        "#FFF4F1EA", "#FFB0B4B8", "#FF9A9EA3", "#FF30353B",
         "#FFE9A84C", "#2EE9A84C");
 
     private static readonly Palette LumaLight = new(
         "#F7F2F0EA", "#FFFAF8F3", "#FFF0ECE4", "#FFE9E3D8",
-        "#FF1B1D20", "#FF656A70", "#FF8A8E92", "#FFDAD4C9",
+        "#FF1B1D20", "#FF656A70", "#FF656A70", "#FFDAD4C9",
         "#FFB86D1D", "#24B86D1D");
 
     private static readonly IReadOnlyDictionary<string, Palette> Palettes =
@@ -27,24 +36,35 @@ public static class ThemeService
             ["Light"] = LumaLight,
             ["Win11Blue"] = new(
                 "#F20C1623", "#FF111F2E", "#FF192C40", "#FF20384E",
-                "#FFF5F9FC", "#FFA9B7C5", "#FF728396", "#FF2D4358",
+                "#FFF5F9FC", "#FFA9B7C5", "#FF9AAABD", "#FF2D4358",
                 "#FF60CDFF", "#3260CDFF"),
             ["Win11Graphite"] = new(
                 "#F218191B", "#FF202225", "#FF292C30", "#FF33373C",
-                "#FFF7F7F7", "#FFB2B6BC", "#FF777D85", "#FF3A3E44",
+                "#FFF7F7F7", "#FFB2B6BC", "#FFA0A6AF", "#FF3A3E44",
                 "#FFA8B3C5", "#30A8B3C5"),
             ["Win11Mist"] = new(
                 "#F4F3F7FB", "#FFF9FBFD", "#FFEAF1F8", "#FFDDEAF6",
-                "#FF18212B", "#FF536273", "#FF7C8996", "#FFD2DCE6",
+                "#FF18212B", "#FF536273", "#FF536273", "#FFD2DCE6",
                 "#FF0067C0", "#240067C0"),
             ["Win11Sage"] = new(
                 "#F3F1F6F2", "#FFF8FBF8", "#FFE7F1EB", "#FFD8EADF",
-                "#FF17221C", "#FF52665B", "#FF7A8C82", "#FFCFDDD5",
+                "#FF17221C", "#FF52665B", "#FF52665B", "#FFCFDDD5",
                 "#FF0F7B6C", "#260F7B6C")
         };
 
     public static void Apply(string requestedTheme)
     {
+        _requestedTheme = requestedTheme;
+        if (System.Windows.SystemParameters.HighContrast)
+        {
+            foreach (var key in new[] { "WindowBrush", "PanelBrush", "PanelHoverBrush" })
+                System.Windows.Application.Current.Resources[key] = System.Windows.SystemColors.WindowBrush;
+            foreach (var key in new[] { "TextBrush", "MutedTextBrush", "FaintTextBrush", "StrokeBrush", "AccentBrush" })
+                System.Windows.Application.Current.Resources[key] = System.Windows.SystemColors.WindowTextBrush;
+            System.Windows.Application.Current.Resources["PanelSelectedBrush"] = System.Windows.SystemColors.ControlBrush;
+            System.Windows.Application.Current.Resources["AccentSoftBrush"] = System.Windows.SystemColors.ControlBrush;
+            return;
+        }
         var palette = requestedTheme.Equals("System", StringComparison.OrdinalIgnoreCase)
             ? SystemPrefersLight() ? LumaLight : LumaDark
             : Palettes.GetValueOrDefault(requestedTheme, LumaDark);

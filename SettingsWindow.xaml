@@ -17,7 +17,7 @@
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusStyle}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type ComboBoxItem}">
@@ -52,7 +52,7 @@
             <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusStyle}"/>
             <Setter Property="ItemContainerStyle" Value="{StaticResource LumaComboBoxItemStyle}"/>
             <Setter Property="MaxDropDownHeight" Value="260"/>
             <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
@@ -156,7 +156,7 @@
             <Grid Grid.Row="0" Margin="22,0" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="LUMA / SETTINGS" FontFamily="Bahnschrift SemiCondensed, Segoe UI"
-                               Foreground="{DynamicResource AccentBrush}" FontSize="10"/>
+                               Foreground="{DynamicResource AccentBrush}" FontSize="11.5"/>
                     <TextBlock Text="偏好设置" FontSize="18" FontWeight="SemiBold" Margin="0,3,0,0"/>
                 </StackPanel>
                 <Button Content="&#xE8BB;" FontFamily="Segoe Fluent Icons" FontSize="13" Width="32" Height="32"
@@ -168,7 +168,7 @@
                           HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="0,0,8,10">
                 <TextBlock Text="唤醒快捷键" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,0,0,7"/>
-                <ComboBox x:Name="HotkeyBox" SelectedValuePath="Tag">
+                <ComboBox AutomationProperties.Name="全局快捷键" x:Name="HotkeyBox" SelectedValuePath="Tag">
                     <ComboBoxItem Content="Alt + Space" Tag="Alt+Space"/>
                     <ComboBoxItem Content="Ctrl + Space" Tag="Ctrl+Space"/>
                     <ComboBoxItem Content="Ctrl + Alt + Space" Tag="Ctrl+Alt+Space"/>
@@ -176,7 +176,7 @@
                 </ComboBox>
 
                 <TextBlock Text="外观" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,19,0,7"/>
-                <ComboBox x:Name="ThemeBox" SelectedValuePath="Tag" SelectionChanged="ThemeBox_SelectionChanged">
+                <ComboBox AutomationProperties.Name="主题" x:Name="ThemeBox" SelectedValuePath="Tag" SelectionChanged="ThemeBox_SelectionChanged">
                     <ComboBoxItem Content="跟随系统" Tag="System"/>
                     <ComboBoxItem Content="Luma 暖夜" Tag="Dark"/>
                     <ComboBoxItem Content="Luma 暖昼" Tag="Light"/>
@@ -196,7 +196,7 @@
                 <TextBlock Text="运行方式" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,12,0,7"/>
                 <ComboBox x:Name="EverythingLifecycleBox" SelectedValuePath="Tag"
                           SelectionChanged="EverythingMode_SelectionChanged">
-                    <ComboBoxItem Content="由 Luma 管理（自动启动，退出时关闭）" Tag="Managed"/>
+                    <ComboBoxItem Content="由 Luma 管理（需要时自动启动）" Tag="Managed"/>
                     <ComboBoxItem Content="仅连接已有 Everything" Tag="Connect"/>
                 </ComboBox>
 
@@ -209,44 +209,64 @@
                     <Button Grid.Column="1" Content="浏览" Style="{StaticResource QuietButton}" Margin="8,0,0,0"
                             Padding="13,8" Click="BrowseEverything_Click"/>
                 </Grid>
-                <TextBlock x:Name="EverythingPathHint" Foreground="{DynamicResource FaintTextBrush}" FontSize="10"
-                           Margin="2,6,0,0" TextWrapping="Wrap" MaxHeight="28"/>
+                <TextBlock x:Name="EverythingPathHint" Foreground="{DynamicResource FaintTextBrush}" FontSize="11.5"
+                           Margin="2,6,0,0" TextWrapping="Wrap"/>
+                <WrapPanel Margin="0,10,0,0">
+                    <Button Content="重新检测" Click="DetectEverything_Click" Style="{StaticResource QuietButton}" Margin="0,0,8,0"/>
+                    <Button Content="下载 Everything" Click="InstallEverything_Click" Style="{StaticResource QuietButton}"/>
+                </WrapPanel>
+                <TextBlock Text="托管模式使用独立配置副本，不修改已有配置。退出时关闭由 Luma 启动的后台客户端；您预先运行的 Everything 和索引服务不受影响。"
+                           TextWrapping="Wrap" Margin="2,8,0,0" Foreground="{DynamicResource MutedTextBrush}" FontSize="11.5"/>
 
                 <CheckBox x:Name="StartupBox" Content="登录 Windows 后自动启动" Margin="2,17,0,0"/>
                 <CheckBox x:Name="QuickSwitchBox" Content="启用文件对话框快速切换（Ctrl + G）" Margin="2,12,0,0"/>
                 <TextBlock Text="Luma 不安装索引服务；文件搜索由本机 Everything 提供。"
-                           Foreground="{DynamicResource FaintTextBrush}" FontSize="10" Margin="2,11,0,0"/>
+                           Foreground="{DynamicResource FaintTextBrush}" FontSize="11.5" Margin="2,11,0,0"/>
 
-                <TextBlock Text="搜索个性化" Foreground="{DynamicResource AccentBrush}" FontSize="10"
+                <TextBlock Text="搜索个性化" Foreground="{DynamicResource AccentBrush}" FontSize="11.5"
                            FontFamily="Bahnschrift SemiCondensed, Segoe UI" Margin="0,23,0,10"/>
                 <TextBlock Text="结果排序" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,0,0,7"/>
-                <ComboBox x:Name="ResultSortBox" SelectedValuePath="Tag">
-                    <ComboBoxItem Content="智能排序（匹配度 + 使用习惯）" Tag="Smart"/>
-                    <ComboBoxItem Content="匹配度优先" Tag="Relevance"/>
-                    <ComboBoxItem Content="常用与收藏优先" Tag="Usage"/>
-                    <ComboBoxItem Content="名称 A–Z" Tag="Name"/>
-                </ComboBox>
-                <TextBlock Text="智能排序会根据匹配质量和历史使用自动调整顺序。"
-                           Foreground="{DynamicResource FaintTextBrush}" FontSize="10" Margin="2,5,0,0"/>
+                <ComboBox x:Name="ResultSortBox" SelectedValuePath="Tag" AutomationProperties.Name="默认结果排序"/>
+                <TextBlock Text="与搜索界面排序按钮同步。名称/大小/修改时间在 Everything 全匹配中排序，应用和工具随后；大小排序中文件夹无大小，按名称排在文件后。智能/相关性/常用仅排序已召回候选；空搜索仍显示最近使用。" TextWrapping="Wrap"
+                           Foreground="{DynamicResource FaintTextBrush}" FontSize="11.5" Margin="2,5,0,0"/>
 
                 <TextBlock Text="应用别名" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,16,0,7"/>
-                <TextBox x:Name="AliasesBox" Height="66" AcceptsReturn="True" VerticalContentAlignment="Top"
+                <TextBox AutomationProperties.Name="应用别名" x:Name="AliasesBox" Height="66" AcceptsReturn="True" VerticalContentAlignment="Top"
                          VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap"
                          ToolTip="每行一个：vsc=Visual Studio Code"/>
                 <TextBlock Text="每行一个，例如：vsc=Visual Studio Code" Foreground="{DynamicResource FaintTextBrush}"
-                           FontSize="10" Margin="2,5,0,0"/>
+                           FontSize="11.5" Margin="2,5,0,0"/>
 
                 <TextBlock Text="附加应用目录" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,16,0,7"/>
-                <TextBox x:Name="AppFoldersBox" Height="58" AcceptsReturn="True" VerticalContentAlignment="Top"
+                <TextBox AutomationProperties.Name="附加应用目录" x:Name="AppFoldersBox" Height="58" AcceptsReturn="True" VerticalContentAlignment="Top"
                          VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap"/>
                 <TextBlock Text="每行一个目录；用于便携应用。" Foreground="{DynamicResource FaintTextBrush}"
-                           FontSize="10" Margin="2,5,0,0"/>
+                           FontSize="11.5" Margin="2,5,0,0"/>
 
                 <TextBlock Text="自定义命令" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,16,0,7"/>
-                <TextBox x:Name="CommandsBox" Height="88" AcceptsReturn="True" VerticalContentAlignment="Top"
+                <TextBox AutomationProperties.Name="自定义命令" x:Name="CommandsBox" Height="88" AcceptsReturn="True" VerticalContentAlignment="Top"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap"/>
                 <TextBlock Text="格式：关键词|标题|程序|参数|工作目录；参数中可使用 {query}。"
-                           Foreground="{DynamicResource FaintTextBrush}" FontSize="10" Margin="2,5,0,0" TextWrapping="Wrap"/>
+                           Foreground="{DynamicResource FaintTextBrush}" FontSize="11.5" Margin="2,5,0,0" TextWrapping="Wrap"/>
+                <TextBlock Text="数据与隐私" FontSize="14" FontWeight="SemiBold" Margin="0,24,0,10"/>
+                <CheckBox x:Name="HistoryBox" Content="记录使用历史，用于推荐和排序"/>
+                <TextBlock Text="配置、收藏和使用历史保存在本机。暂停记录不会删除已有数据。"
+                           TextWrapping="Wrap" FontSize="11.5" Margin="0,8,0,10"/>
+                <WrapPanel>
+                    <Button Content="清空历史（保留收藏）" Click="ClearHistory_Click" Style="{StaticResource QuietButton}" Margin="0,0,6,6"/>
+                    <Button Content="导入配置" Click="ImportSettings_Click" Style="{StaticResource QuietButton}" Margin="0,0,6,6"/>
+                    <Button Content="导出配置" Click="ExportSettings_Click" Style="{StaticResource QuietButton}" Margin="0,0,6,6"/>
+                </WrapPanel>
+                <TextBlock x:Name="PrivacyStatusText" TextWrapping="Wrap" FontSize="11.5"/>
+                <TextBlock Text="关于与更新" FontSize="14" FontWeight="SemiBold" Margin="0,24,0,10"/>
+                <TextBlock x:Name="VersionText" FontSize="12" Margin="0,0,0,10"/>
+                <WrapPanel>
+                    <Button Content="检查更新" Click="CheckUpdate_Click" Style="{StaticResource QuietButton}" Margin="0,0,6,6"/>
+                    <Button Content="下载页" Click="OpenRelease_Click" Style="{StaticResource QuietButton}" Margin="0,0,6,6"/>
+                    <Button Content="开源许可" Click="Licenses_Click" Style="{StaticResource QuietButton}" Margin="0,0,6,6"/>
+                </WrapPanel>
+                <TextBlock x:Name="UpdateStatusText" Text="仅在点击检查时访问 GitHub。退出 Luma 后替换 EXE 即可升级。"
+                           TextWrapping="Wrap" FontSize="11.5"/>
             </StackPanel>
             </ScrollViewer>
 

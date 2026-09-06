@@ -10,16 +10,19 @@ public sealed class SettingsStore
 
     public SettingsStore()
     {
-        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LumaLauncher");
+        var directory = AppDataPaths.DirectoryPath;
         Directory.CreateDirectory(directory);
         _path = Path.Combine(directory, "settings.json");
         Current = Load();
     }
 
     public AppSettings Current { get; private set; }
+    public string? CompatibilityWarning { get; private set; }
 
     public void Save(AppSettings settings)
     {
+        if (CompatibilityWarning is not null) throw new InvalidOperationException(CompatibilityWarning);
+        settings = settings.Copy().Normalize();
         AtomicFileService.WriteAllText(_path, JsonSerializer.Serialize(settings, JsonOptions));
         Current = settings.Copy();
     }
@@ -28,9 +31,15 @@ public sealed class SettingsStore
     {
         try
         {
-            return File.Exists(_path)
+            var settings = File.Exists(_path)
                 ? JsonSerializer.Deserialize<AppSettings>(AtomicFileService.ReadAllText(_path)) ?? new AppSettings()
                 : new AppSettings();
+            if (settings.SchemaVersion > 1)
+            {
+                CompatibilityWarning = "配置来自更新版本的 Luma。当前使用临时默认值，禁止保存以保护原配置；请升级程序。";
+                return new AppSettings();
+            }
+            return settings.Normalize();
         }
         catch (Exception exception)
         {

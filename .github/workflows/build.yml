@@ -1,0 +1,29 @@
+name: Build and validate
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet build Launcher.csproj -c Release
+      - run: dotnet run --project Tests/Luma.SmokeTests.csproj -c Release
+      - run: dotnet publish Launcher.csproj -p:PublishProfile=SingleFile
+      - name: Verify single-file artifact
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem publish/win-x64 -File)
+          if ($files.Count -ne 1 -or $files[0].Name -ne 'Luma.exe') { throw 'Unexpected release contents' }
+          Get-FileHash publish/win-x64/Luma.exe -Algorithm SHA256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Luma-win-x64
+          path: publish/win-x64/Luma.exe

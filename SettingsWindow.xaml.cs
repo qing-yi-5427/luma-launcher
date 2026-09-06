@@ -9,7 +9,8 @@ namespace LumaLauncher;
 public sealed partial class SettingsWindow : Window
 {
     private readonly string _originalTheme;
-    private readonly string _webSearchUrl;
+    private string _webSearchUrl;
+    private readonly CancellationTokenSource _lifetime = new();
     private bool _saved;
 
     public SettingsWindow(AppSettings settings)
@@ -17,6 +18,19 @@ public sealed partial class SettingsWindow : Window
         _originalTheme = settings.Theme;
         _webSearchUrl = settings.WebSearchUrl;
         InitializeComponent();
+        Width = Math.Min(540, Math.Max(320, SystemParameters.WorkArea.Width - 32));
+        Height = Math.Min(760, Math.Max(280, SystemParameters.WorkArea.Height - 32));
+        foreach (var (mode, label) in ResultRanker.Options)
+            ResultSortBox.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = label, Tag = mode });
+        LoadControls(settings);
+        VersionText.Text = $"Luma {UpdateService.CurrentVersion} · Windows x64";
+        SourceInitialized += (_, _) => ApplyDwmStyling();
+    }
+
+    private void LoadControls(AppSettings settings)
+    {
+        settings.Normalize();
+        _webSearchUrl = settings.WebSearchUrl;
         HotkeyBox.SelectedValue = settings.Hotkey;
         ThemeBox.SelectedValue = settings.Theme;
         StartupBox.IsChecked = settings.StartWithWindows;
@@ -28,15 +42,18 @@ public sealed partial class SettingsWindow : Window
             ? "Connect"
             : "Managed";
         QuickSwitchBox.IsChecked = settings.EnableQuickSwitch;
+        HistoryBox.IsChecked = settings.RecordHistory;
         ResultSortBox.SelectedValue = ResultRanker.Normalize(settings.ResultSort);
         AliasesBox.Text = settings.Aliases;
         AppFoldersBox.Text = settings.AppFolders;
         CommandsBox.Text = settings.CustomCommands;
         UpdateEverythingControls();
-        SourceInitialized += (_, _) => ApplyDwmStyling();
     }
 
+    public void SyncResultSort(string mode) => ResultSortBox.SelectedValue = ResultRanker.Normalize(mode);
+
     public event Action<AppSettings>? SettingsSaved;
+    public event Action? ClearHistoryRequested;
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {
@@ -59,6 +76,7 @@ public sealed partial class SettingsWindow : Window
             EverythingPath = everythingPath,
             EverythingLifecycle = EverythingLifecycleBox.SelectedValue as string ?? "Managed",
             EnableQuickSwitch = QuickSwitchBox.IsChecked == true,
+            RecordHistory = HistoryBox.IsChecked == true,
             Aliases = AliasesBox.Text.Trim(),
             AppFolders = AppFoldersBox.Text.Trim(),
             CustomCommands = CommandsBox.Text.Trim(),
@@ -134,9 +152,90 @@ public sealed partial class SettingsWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _lifetime.Cancel();
         if (!_saved)
             ThemeService.Apply(_originalTheme);
         base.OnClosed(e);
+    }
+
+    private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateStatusText.Text = "正在检查更新…";
+        try { UpdateStatusText.Text = await UpdateService.CheckAsync(_lifetime.Token); }
+        catch (OperationCanceledException) { UpdateStatusText.Text = "检查已取消或超时，可重试。"; }
+        catch (Exception exception) { DiagnosticsService.Log("update-check", exception); UpdateStatusText.Text = "无法连接更新服务器，请重试或打开下载页。"; }
+    }
+
+    private void OpenRelease_Click(object sender, RoutedEventArgs e) => OpenWebsite(UpdateService.ReleasesUrl);
+    private void InstallEverything_Click(object sender, RoutedEventArgs e) => OpenWebsite("https://www.voidtools.com/downloads/");
+    private static void OpenWebsite(string url)
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch (Exception exception) { MessageBox.Show(exception.Message, "无法打开浏览器"); }
+    }
+
+    private async void DetectEverything_Click(object sender, RoutedEventArgs e)
+    {
+        EverythingPathHint.Text = "正在检测连接…";
+        using var service = new EverythingSearchService();
+        service.Configure("Auto", string.Empty, "Connect");
+        try
+        {
+            var response = await service.SearchAsync("file: ext:exe", 1, _lifetime.Token);
+            EverythingPathHint.Text = response.Available ? "Everything 已连接，可进行文件搜索。" :
+                response.StatusText + "。请安装普通版（Lite 版不支持连接），启动后重试。";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception) { EverythingPathHint.Text = "检测失败：" + exception.Message; }
+    }
+
+    private void ClearHistory_Click(object sender, RoutedEventArgs e)
+    {
+        try { ClearHistoryRequested?.Invoke(); PrivacyStatusText.Text = "使用历史已清空，收藏已保留。"; }
+        catch (Exception exception) { PrivacyStatusText.Text = "清空失败：" + exception.Message; }
+    }
+
+    private void ExportSettings_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "Luma 配置 (*.json)|*.json", FileName = "luma-settings.json" };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            var store = new SettingsStore();
+            if (store.CompatibilityWarning is { } warning) throw new InvalidOperationException(warning);
+            var settings = store.Current;
+            AtomicFileService.WriteAllText(dialog.FileName, System.Text.Json.JsonSerializer.Serialize(settings,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            PrivacyStatusText.Text = "已导出已保存的配置（不含历史和收藏）。";
+        }
+        catch (Exception exception) { PrivacyStatusText.Text = "导出失败：" + exception.Message; }
+    }
+
+    private void ImportSettings_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "Luma 配置 (*.json)|*.json" };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            if (new FileInfo(dialog.FileName).Length > 1024 * 1024) throw new InvalidDataException("配置文件不能超过 1 MB。");
+            var settings = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(dialog.FileName))
+                ?? throw new InvalidDataException("配置为空。");
+            LoadControls(settings.Normalize());
+            PrivacyStatusText.Text = "配置已载入，请检查自定义命令后点击保存应用。";
+        }
+        catch (Exception exception) { PrivacyStatusText.Text = "导入失败：" + exception.Message; }
+    }
+
+    private void Licenses_Click(object sender, RoutedEventArgs e)
+    {
+        using var stream = typeof(SettingsWindow).Assembly.GetManifestResourceStream("Luma.ThirdPartyNotices.md");
+        if (stream is null) return;
+        using var reader = new StreamReader(stream);
+        new Window { Title = "Luma · 开源许可", Owner = this, Width = Math.Min(680, SystemParameters.WorkArea.Width - 40),
+            Height = Math.Min(560, SystemParameters.WorkArea.Height - 40), WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new System.Windows.Controls.TextBox { Text = "Luma Launcher · MIT License\n\n" + reader.ReadToEnd(),
+                IsReadOnly = true, TextWrapping = TextWrapping.Wrap, Padding = new Thickness(18),
+                VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto } }.ShowDialog();
     }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

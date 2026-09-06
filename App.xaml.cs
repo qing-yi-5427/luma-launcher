@@ -7,6 +7,7 @@ namespace LumaLauncher;
 
 public sealed partial class App : System.Windows.Application
 {
+    internal static bool IsTestHost { get; set; }
     private InstanceCoordinator? _instance;
     private SettingsStore? _settingsStore;
     private TrayIconService? _trayIcon;
@@ -15,6 +16,7 @@ public sealed partial class App : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (IsTestHost) { base.OnStartup(e); return; }
         DiagnosticsService.Initialize(this);
         base.OnStartup(e);
         _instance = new InstanceCoordinator();
@@ -25,11 +27,15 @@ public sealed partial class App : System.Windows.Application
         }
 
         _settingsStore = new SettingsStore();
+        if (_settingsStore.CompatibilityWarning is { } warning)
+            MessageBox.Show(warning, "Luma · 配置版本不兼容", MessageBoxButton.OK, MessageBoxImage.Warning);
         ThemeService.Apply(_settingsStore.Current.Theme);
+        ThemeService.StartFollowingSystem();
         _launcherWindow = new MainWindow(_settingsStore);
         MainWindow = _launcherWindow;
 
         _launcherWindow.SettingsRequested += OpenSettings;
+        _launcherWindow.ResultSortChanged += mode => _settingsWindow?.SyncResultSort(mode);
         _launcherWindow.ExitRequested += ExitApplication;
         _launcherWindow.HotkeyRegistrationChanged += RegistrationChanged;
         _instance.ActivationRequested += () => Dispatcher.Invoke(_launcherWindow.ShowLauncher);
@@ -47,7 +53,8 @@ public sealed partial class App : System.Windows.Application
         if (registration.UsedFallback)
             _trayIcon.ShowHotkeyFallback(registration.Requested, registration.Active);
 
-        if (e.Args.Contains("--settings", StringComparer.OrdinalIgnoreCase))
+        if (e.Args.Contains("--settings", StringComparer.OrdinalIgnoreCase) ||
+            !File.Exists(Path.Combine(AppDataPaths.DirectoryPath, "settings.json")))
             OpenSettings();
         else if (!e.Args.Contains("--silent", StringComparer.OrdinalIgnoreCase))
             _launcherWindow.ShowLauncher();
@@ -76,6 +83,7 @@ public sealed partial class App : System.Windows.Application
 
         _settingsWindow = new SettingsWindow(_settingsStore.Current.Copy());
         _settingsWindow.SettingsSaved += SaveSettings;
+        _settingsWindow.ClearHistoryRequested += _launcherWindow.ClearHistory;
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
         _settingsWindow.Activate();
@@ -106,6 +114,7 @@ public sealed partial class App : System.Windows.Application
             _launcherWindow.TrayMessageHandler = null;
         _trayIcon?.Dispose();
         _instance?.Dispose();
+        ThemeService.StopFollowingSystem();
         base.OnExit(e);
     }
 }

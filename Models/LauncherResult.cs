@@ -24,6 +24,10 @@ public sealed class LauncherResult : INotifyPropertyChanged
     public required string Target { get; init; }
     public required LauncherResultKind Kind { get; init; }
     public required double Score { get; init; }
+    // Position in the provider's globally sorted query (null for applications/tools/history).
+    public int? ProviderOrder { get; init; }
+    public long? IndexedSize { get; init; }
+    public long? IndexedModifiedFileTime { get; init; }
     public string Arguments { get; init; } = string.Empty;
     public string WorkingDirectory { get; init; } = string.Empty;
     public string CopyText { get; init; } = string.Empty;

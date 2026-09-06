@@ -25,7 +25,7 @@ public sealed class UsageStore
 
     public UsageStore()
     {
-        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LumaLauncher");
+        var directory = AppDataPaths.DirectoryPath;
         Directory.CreateDirectory(directory);
         _path = Path.Combine(directory, "usage.json");
         _entries = Load();
@@ -98,6 +98,38 @@ public sealed class UsageStore
         }
     }
 
+    public IReadOnlyList<LauncherResult> Search(string query, string filter, CancellationToken token)
+    {
+        int count;
+        lock (_sync) count = _entries.Count;
+        var prepared = FuzzyMatcher.Prepare(query);
+        var matches = new List<LauncherResult>();
+        foreach (var item in GetRecent(Math.Max(1, count)))
+        {
+            token.ThrowIfCancellationRequested();
+            if (item.Kind is not (LauncherResultKind.File or LauncherResultKind.Folder) ||
+                filter == "Application" || filter == "File" && item.Kind != LauncherResultKind.File ||
+                filter == "Folder" && item.Kind != LauncherResultKind.Folder) continue;
+            var score = FuzzyMatcher.Score(prepared, FuzzyMatcher.PrepareCandidate(item.Title),
+                FuzzyMatcher.PrepareCandidate(item.Subtitle));
+            if (double.IsNegativeInfinity(score)) continue;
+            matches.Add(new LauncherResult { Title = item.Title, Subtitle = item.Subtitle, Target = item.Target,
+                Kind = item.Kind, Score = score + GetBoost(item.Target), IsFavorite = item.IsFavorite });
+        }
+        return matches;
+    }
+
+    public void ClearHistory()
+    {
+        lock (_sync)
+        {
+            _entries = _entries.Where(pair => pair.Value.Favorite)
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in _entries.Values) { entry.Count = 0; entry.LastUsedUtc = DateTime.MinValue; }
+            Save();
+        }
+    }
+
     public bool ToggleFavorite(LauncherResult result)
     {
         lock (_sync)
@@ -151,7 +183,7 @@ public sealed class UsageStore
         try
         {
             return File.Exists(_path)
-                ? JsonSerializer.Deserialize<Dictionary<string, UsageEntry>>(AtomicFileService.ReadAllText(_path)) ?? NewDictionary()
+                ? new Dictionary<string, UsageEntry>(JsonSerializer.Deserialize<Dictionary<string, UsageEntry>>(AtomicFileService.ReadAllText(_path)) ?? NewDictionary(), StringComparer.OrdinalIgnoreCase)
                 : NewDictionary();
         }
         catch (Exception exception)

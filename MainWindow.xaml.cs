@@ -13,7 +13,7 @@ namespace LumaLauncher;
 public sealed partial class MainWindow : Window
 {
     private const double CompactHeight = 94;
-    private const double ExpandedHeight = 560;
+    private const double ExpandedHeight = 600;
     private const double CompactWidth = 700;
     private const double FullResultsWidth = 1040;
     private const double FullResultsHeight = 680;
@@ -27,6 +27,7 @@ public sealed partial class MainWindow : Window
     private readonly SearchCoordinator _search = new();
     private readonly QuickSwitchService _quickSwitch = new();
     private readonly SettingsStore _settings;
+    private readonly bool _previewMode;
     private readonly HotkeyService _hotkey = new();
     private CancellationTokenSource? _searchCancellation;
     private CancellationTokenSource? _detailCancellation;
@@ -43,14 +44,30 @@ public sealed partial class MainWindow : Window
     private bool _fullResultsMode;
     private long _detailGeneration;
     private DateTimeOffset _ignoreDeactivateUntil;
+    private string? _completedQuery;
+    private bool _hasMore;
+    private int? _fileMatchCount;
+    private int _fullResultLimit = FullSearchResultLimit;
+    private bool _composing;
+    private readonly System.Diagnostics.Stopwatch _queryTimer = new();
 
     internal Func<int, IntPtr, IntPtr, bool>? TrayMessageHandler { get; set; }
 
-    public MainWindow(SettingsStore settings)
+    public MainWindow(SettingsStore settings, bool previewMode = false)
     {
+        _previewMode = previewMode;
         _settings = settings;
         InitializeComponent();
         ResultsList.ItemsSource = _results;
+        UpdateSortButton();
+        TextCompositionManager.AddPreviewTextInputStartHandler(SearchBox, (_, _) =>
+        { _composing = true; _completedQuery = null; _searchCancellation?.Cancel(); });
+        TextCompositionManager.AddPreviewTextInputHandler(SearchBox, (_, _) =>
+        {
+            _composing = false;
+            Dispatcher.BeginInvoke(() => SearchBox_TextChanged(SearchBox, null!), System.Windows.Threading.DispatcherPriority.Background);
+        });
+        SearchBox.LostKeyboardFocus += (_, _) => _composing = false;
         SourceInitialized += MainWindow_SourceInitialized;
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
@@ -71,12 +88,20 @@ public sealed partial class MainWindow : Window
     public void ApplySettings()
     {
         ThemeService.Apply(_settings.Current.Theme);
+        var sortChanged = !Equals(SortButton.Tag, ResultRanker.Normalize(_settings.Current.ResultSort));
         var foldersChanged = _search.Configure(_settings.Current);
+        UpdateSortButton();
+        if (sortChanged)
+        {
+            _completedQuery = null;
+            _searchCancellation?.Cancel();
+            if (IsVisible) _ = SearchCurrentTextAsync(0);
+        }
         _quickSwitch.Enabled = _settings.Current.EnableQuickSwitch;
-        _ = EnsureEverythingRunningAsync();
+        if (!_previewMode) _ = EnsureEverythingRunningAsync();
         if (foldersChanged && _search.IsInitialized)
             _ = ReloadAppsAsync();
-        if (_source is null)
+        if (_source is null || _previewMode)
             return;
         _registration = _hotkey.Register(_source.Handle, _settings.Current.Hotkey);
         HotkeyText.Text = _registration.Active.Replace("+", "  ").ToUpperInvariant();
@@ -140,11 +165,14 @@ public sealed partial class MainWindow : Window
         QuickSwitchHint.Visibility = _quickSwitch.HasTarget ? Visibility.Visible : Visibility.Collapsed;
         AnimateShow();
         if (string.IsNullOrWhiteSpace(SearchBox.Text))
-            _ = ShowRecommendationsAsync();
+            _ = SearchCurrentTextAsync(0);
+        else if (_completedQuery != SearchBox.Text.Trim())
+            _ = SearchCurrentTextAsync(0);
     }
 
     public void HideLauncher()
     {
+        _composing = false;
         _searchCancellation?.Cancel();
         if (_fullResultsMode)
             LeaveFullResultsMode(animate: false);
@@ -168,8 +196,6 @@ public sealed partial class MainWindow : Window
             if (IsVisible || token.IsCancellationRequested)
                 return;
             _search.TrimCaches();
-            using var process = System.Diagnostics.Process.GetCurrentProcess();
-            NativeMethods.EmptyWorkingSet(process.Handle);
         }
         catch (OperationCanceledException) { }
     }
@@ -177,7 +203,11 @@ public sealed partial class MainWindow : Window
     public void OpenSettings() => SettingsRequested?.Invoke();
     public void RequestExit() => ExitRequested?.Invoke();
 
-    public void ShutdownEverything() => _search.ShutdownEverything();
+    public void ShutdownEverything()
+    {
+        _searchCancellation?.Cancel();
+        _search.ShutdownEverything();
+    }
 
     public void CloseForExit()
     {
@@ -213,10 +243,14 @@ public sealed partial class MainWindow : Window
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         SearchHint.Visibility = SearchBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _completedQuery = null;
+        _fullResultLimit = FullSearchResultLimit;
+        if (_composing) return;
+        _queryTimer.Restart();
         _ = SearchCurrentTextAsync(SearchDebounceMilliseconds);
     }
 
-    private async Task<bool> SearchCurrentTextAsync(int delayMilliseconds)
+    private async Task<bool> SearchCurrentTextAsync(int delayMilliseconds, bool preserveResults = false)
     {
         _searchCancellation?.Cancel();
         _searchCancellation?.Dispose();
@@ -232,7 +266,9 @@ public sealed partial class MainWindow : Window
         }
 
         var pendingQuery = SearchBox.Text.Trim();
+        var previousSelection = preserveResults ? ResultsList.SelectedItem as LauncherResult : null;
         SetSearchPending(true);
+        if (previousSelection is not null) ResultsList.SelectedItem = previousSelection;
 
         try
         {
@@ -240,7 +276,7 @@ public sealed partial class MainWindow : Window
             if (generation != _searchGeneration || !pendingQuery.Equals(SearchBox.Text.Trim(), StringComparison.Ordinal))
                 return false;
 
-            var keepExistingResults = _fullResultsMode && _allResults.Count > 0;
+            var keepExistingResults = (_fullResultsMode || preserveResults) && _allResults.Count > 0;
             SetExpanded(keepExistingResults ? _results.Count : 0, showBody: true);
             if (!keepExistingResults)
             {
@@ -253,11 +289,21 @@ public sealed partial class MainWindow : Window
             }
             StatusText.Text = keepExistingResults ? "正在加载更多结果…" : "Everything + 应用";
 
-            var resultLimit = _fullResultsMode ? FullSearchResultLimit : QuickSearchResultLimit;
-            var batch = await _search.SearchAsync(pendingQuery, resultLimit, token);
+            var resultLimit = _fullResultsMode ? _fullResultLimit : QuickSearchResultLimit;
+            var publishedPartial = false;
+            var batch = await _search.SearchAsync(pendingQuery, resultLimit, token, _activeFilter, partial =>
+                Dispatcher.Invoke(() =>
+                {
+                    if (generation != _searchGeneration || token.IsCancellationRequested || preserveResults) return;
+                    ApplyBatch(partial, "文件搜索中…");
+                    publishedPartial = true;
+                    SetSearchPending(false);
+                }));
             if (generation != _searchGeneration || !pendingQuery.Equals(SearchBox.Text.Trim(), StringComparison.Ordinal))
                 return false;
-            ApplyBatch(batch, "没有找到匹配项");
+            if (token.IsCancellationRequested) return false;
+            _completedQuery = batch.EverythingAvailable ? pendingQuery : null;
+            ApplyBatch(batch, "没有找到匹配项", preserveResults || publishedPartial);
             return true;
         }
         catch (OperationCanceledException) { return false; }
@@ -294,22 +340,32 @@ public sealed partial class MainWindow : Window
         var token = _searchCancellation?.Token ?? CancellationToken.None;
         try
         {
-            var resultLimit = _fullResultsMode ? FullSearchResultLimit : QuickSearchResultLimit;
+            var resultLimit = _fullResultsMode ? _fullResultLimit : QuickSearchResultLimit;
             var batch = await _search.GetRecommendationsAsync(resultLimit, token);
-            if (generation != _searchGeneration || SearchBox.Text.Length != 0)
+            if (generation != _searchGeneration || !string.IsNullOrWhiteSpace(SearchBox.Text))
                 return;
             ApplyBatch(batch, "输入应用、文件名或 Everything 语法");
         }
         catch (OperationCanceledException) { }
     }
 
-    private void ApplyBatch(SearchBatch batch, string emptyMessage)
+    private void ApplyBatch(SearchBatch batch, string emptyMessage, bool preserveSelection = false)
     {
+        var selection = preserveSelection ? (ResultsList.SelectedItem as LauncherResult)?.Target : null;
+        _hasMore = batch.HasMore;
+        _fileMatchCount = batch.FileMatchCount;
         _allResults.Clear();
         _allResults.AddRange(batch.Results);
         _batchStatus = batch.StatusText;
         _pageIndex = 0;
         ApplyCurrentPage(emptyMessage);
+        if (selection is not null)
+            ResultsList.SelectedItem = _results.FirstOrDefault(item => item.Target == selection) ?? _results.FirstOrDefault();
+        if (_queryTimer.IsRunning)
+        {
+            _queryTimer.Stop();
+            DiagnosticsService.Log("first-results", $"input_to_results_ms={_queryTimer.ElapsedMilliseconds}; items={batch.Results.Count}");
+        }
     }
 
     private void ApplyCurrentPage(string emptyMessage = "这个分类没有结果")
@@ -329,11 +385,13 @@ public sealed partial class MainWindow : Window
         EmptyText.Visibility = _results.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ResultsList.Visibility = _results.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         StatusText.Text = filtered.Count == 0 ? _batchStatus : $"{filtered.Count} 个结果 · {_batchStatus}";
-        SortModeText.Text = $"{filtered.Count} 条 · {GetSortModeLabel(_settings.Current.ResultSort)}排序";
-        MoreButton.Visibility = _fullResultsMode || filtered.Count > 0
+        UpdateSortButton();
+        MoreButton.Visibility = _fullResultsMode || filtered.Count > 0 || _hasMore
             ? Visibility.Visible
             : Visibility.Collapsed;
-        MoreButton.Content = _fullResultsMode ? "收起" : "查看全部";
+        MoreButton.Content = _fullResultsMode ? "收起" : "展开结果";
+        LoadMoreButton.Visibility = _fullResultsMode && _hasMore ? Visibility.Visible : Visibility.Collapsed;
+        StatusText.Text = $"已加载 {filtered.Count} 项{(_fileMatchCount is > 0 ? $" · 文件匹配 ≥ {_fileMatchCount}" : "")}{(_hasMore ? " · 可继续加载" : "")} · {_batchStatus}";
         UpdateFilterButtons();
         SetExpanded(_results.Count, _allResults.Count > 0 || SearchBox.Text.Length > 0);
     }
@@ -376,17 +434,29 @@ public sealed partial class MainWindow : Window
         finally { _iconLoads.Remove(result); }
     }
 
+    private void ResultItem_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e) =>
+        ResultItem_Loaded(sender, new RoutedEventArgs());
+
     private void SetExpanded(int resultCount, bool showBody)
     {
         ResultsRow.Height = new GridLength(showBody ? 1 : 0, showBody ? GridUnitType.Star : GridUnitType.Pixel);
         FooterRow.Height = new GridLength(showBody ? 38 : 0);
         ResultsHost.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
         Footer.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
-        var resultArea = 36 + (resultCount > 0 ? Math.Min(PageSize, resultCount) * 50 + 8 : 72);
+        var resultArea = 36 + (resultCount > 0 ? Math.Min(PageSize, resultCount) * 52 + 8 : 72);
+        var available = GetFullResultsSize();
         var targetHeight = _fullResultsMode
-            ? GetFullResultsSize().Height
-            : showBody ? Math.Min(ExpandedHeight, CompactHeight + resultArea + 38) : CompactHeight;
-        var targetWidth = _fullResultsMode ? GetFullResultsSize().Width : CompactWidth;
+            ? available.Height
+            : showBody ? Math.Min(available.Height, Math.Min(ExpandedHeight, CompactHeight + resultArea + 38)) : CompactHeight;
+        var targetWidth = _fullResultsMode ? available.Width : Math.Min(CompactWidth, available.Width);
+        if (_fullResultsMode)
+        {
+            var showDetails = available.Width >= 840;
+            DetailsPane.Visibility = showDetails ? Visibility.Visible : Visibility.Collapsed;
+            DetailsDivider.Visibility = showDetails ? Visibility.Visible : Visibility.Collapsed;
+            DetailsPaneColumn.Width = new GridLength(showDetails ? 0.42 : 0, GridUnitType.Star);
+            DetailsDividerColumn.Width = new GridLength(showDetails ? 21 : 0);
+        }
         AnimateWindowSize(targetWidth, targetHeight);
     }
 
@@ -432,8 +502,8 @@ public sealed partial class MainWindow : Window
         var availableWidth = (area.Right - area.Left) * scaleX - 48;
         var availableHeight = (area.Bottom - area.Top) * scaleY - 64;
         return (
-            Math.Max(CompactWidth, Math.Min(FullResultsWidth, availableWidth)),
-            Math.Max(ExpandedHeight, Math.Min(FullResultsHeight, availableHeight)));
+            Math.Max(320, Math.Min(FullResultsWidth, availableWidth)),
+            Math.Max(260, Math.Min(FullResultsHeight, availableHeight)));
     }
 
     private void AnimateShow()
@@ -456,8 +526,9 @@ public sealed partial class MainWindow : Window
         if (sender is not Button { Tag: string filter })
             return;
         _activeFilter = filter;
+        _fullResultLimit = FullSearchResultLimit;
         _pageIndex = 0;
-        ApplyCurrentPage();
+        _ = SearchCurrentTextAsync(0);
     }
 
     private void MoreButton_Click(object sender, RoutedEventArgs e)
@@ -478,12 +549,20 @@ public sealed partial class MainWindow : Window
         DetailsPaneColumn.Width = new GridLength(0.42, GridUnitType.Star);
         DetailsDivider.Visibility = Visibility.Visible;
         DetailsPane.Visibility = Visibility.Visible;
-        SortModeText.Visibility = Visibility.Visible;
         _pageIndex = 0;
         ApplyCurrentPage();
-        if (!string.IsNullOrWhiteSpace(SearchBox.Text) && _allResults.Count >= QuickSearchResultLimit)
-            _ = SearchCurrentTextAsync(0);
+        if (!string.IsNullOrWhiteSpace(SearchBox.Text) && (_hasMore || _allResults.Count >= QuickSearchResultLimit))
+            _ = SearchCurrentTextAsync(0, true);
     }
+
+    private void LoadMore_Click(object sender, RoutedEventArgs e)
+    {
+        if (_searchPending) return;
+        _fullResultLimit = checked(_fullResultLimit + FullSearchResultLimit);
+        _ = SearchCurrentTextAsync(0, true);
+    }
+
+    public void ClearHistory() { _search.ClearHistory(); _completedQuery = null; }
 
     private void LeaveFullResultsMode(bool animate = true)
     {
@@ -496,17 +575,16 @@ public sealed partial class MainWindow : Window
         DetailsPaneColumn.Width = new GridLength(0);
         DetailsDivider.Visibility = Visibility.Collapsed;
         DetailsPane.Visibility = Visibility.Collapsed;
-        SortModeText.Visibility = Visibility.Collapsed;
         _pageIndex = 0;
         ApplyCurrentPage();
         if (!animate)
         {
             BeginAnimation(WidthProperty, null);
             BeginAnimation(HeightProperty, null);
-            Width = CompactWidth;
+            Width = Math.Min(CompactWidth, GetFullResultsSize().Width);
             var showBody = _allResults.Count > 0 || SearchBox.Text.Length > 0;
-            var resultArea = 36 + (_results.Count > 0 ? Math.Min(PageSize, _results.Count) * 50 + 8 : 72);
-            Height = showBody ? Math.Min(ExpandedHeight, CompactHeight + resultArea + 38) : CompactHeight;
+            var resultArea = 36 + (_results.Count > 0 ? Math.Min(PageSize, _results.Count) * 52 + 8 : 72);
+            Height = showBody ? Math.Min(GetFullResultsSize().Height, Math.Min(ExpandedHeight, CompactHeight + resultArea + 38)) : CompactHeight;
         }
         SearchBox.Focus();
         Keyboard.Focus(SearchBox);
@@ -531,13 +609,71 @@ public sealed partial class MainWindow : Window
             NativeMethods.SwpNoSize | NativeMethods.SwpNoZOrder | NativeMethods.SwpNoActivate);
     }
 
-    private static string GetSortModeLabel(string? mode) => ResultRanker.Normalize(mode) switch
+    private void UpdateSortButton()
     {
-        ResultRanker.Relevance => "匹配度",
-        ResultRanker.Usage => "常用与收藏",
-        ResultRanker.Name => "名称 A–Z",
-        _ => "智能"
-    };
+        SortButton.Tag = ResultRanker.Normalize(_settings.Current.ResultSort);
+        SortButton.Content = $"排序 · {ResultRanker.Label(_settings.Current.ResultSort)} ▾";
+        System.Windows.Automation.AutomationProperties.SetName(SortButton, $"结果排序：{ResultRanker.Label(_settings.Current.ResultSort)}");
+    }
+
+    internal System.Windows.Controls.ContextMenu CreateSortMenu()
+    {
+        var menu = new System.Windows.Controls.ContextMenu
+        {
+            Background = (System.Windows.Media.Brush)FindResource("PanelBrush"),
+            Foreground = (System.Windows.Media.Brush)FindResource("TextBrush"),
+            BorderBrush = (System.Windows.Media.Brush)FindResource("StrokeBrush"),
+            BorderThickness = new Thickness(1), Padding = new Thickness(4)
+        };
+        menu.Style = (Style)FindResource("SortMenuStyle");
+        foreach (var (mode, label) in ResultRanker.Options)
+        {
+            var selected = mode == ResultRanker.Normalize(_settings.Current.ResultSort);
+            // The shared menu template has no checkmark presenter; include a visible mark.
+            var item = new System.Windows.Controls.MenuItem { Header = (selected ? "✓  " : "    ") + label,
+                Tag = mode, IsCheckable = true, IsChecked = selected, Style = (Style)FindResource("LumaMenuItem") };
+            item.Click += (_, _) => ChangeSort(mode);
+            menu.Items.Add(item);
+        }
+        menu.Closed += (_, _) => _contextMenuOpen = false;
+        return menu;
+    }
+
+    private void SortButton_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = CreateSortMenu();
+        menu.PlacementTarget = SortButton;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        _contextMenuOpen = true;
+        menu.IsOpen = true;
+    }
+
+    internal void ChangeSort(string mode)
+    {
+        mode = ResultRanker.Normalize(mode);
+        if (mode == _settings.Current.ResultSort) return;
+        try
+        {
+            var settings = _settings.Current.Copy();
+            settings.ResultSort = mode;
+            _settings.Save(settings);
+            _search.Configure(_settings.Current);
+            UpdateSortButton();
+            ResultSortChanged?.Invoke(mode);
+            _completedQuery = null;
+            _pageIndex = 0;
+            _fullResultLimit = FullSearchResultLimit;
+            _searchCancellation?.Cancel();
+            if (IsVisible) _ = SearchCurrentTextAsync(0);
+        }
+        catch (Exception exception)
+        {
+            DiagnosticsService.Log("sort-save", exception);
+            StatusText.Text = "排序保存失败，请重试";
+        }
+    }
+
+    public event Action<string>? ResultSortChanged;
 
     private static void ApplyDwmStyling(IntPtr handle)
     {
@@ -549,6 +685,8 @@ public sealed partial class MainWindow : Window
 
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (_contextMenuOpen || _composing || e.Key == Key.ImeProcessed) return;
+        if (e.OriginalSource is System.Windows.Controls.Primitives.ButtonBase && e.Key is Key.Enter or Key.Space) return;
         if (e.Key == Key.Escape)
         {
             if (_fullResultsMode)
@@ -608,7 +746,8 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control && ResultsList.SelectedItem is LauncherResult copyResult)
+        if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control &&
+            !SearchBox.IsKeyboardFocusWithin && ResultsList.SelectedItem is LauncherResult copyResult)
         {
             ResultExecutionService.CopyPath(copyResult);
             StatusText.Text = "已复制路径";
@@ -616,7 +755,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (e.Key == Key.Right || e.Key == Key.O && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        if (e.Key == Key.Right && !SearchBox.IsKeyboardFocusWithin || e.Key == Key.O && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
             ShowActions();
             e.Handled = true;
@@ -806,7 +945,7 @@ public sealed partial class MainWindow : Window
         var generation = Interlocked.Increment(ref _detailGeneration);
 
         DetailKindText.Text = selected.SourceLabel;
-        DetailLocationText.Text = selected.Target;
+        SearchHighlight.SetText(DetailLocationText, selected.Target);
         DetailSizeText.Text = "正在读取…";
         DetailModifiedText.Text = "正在读取…";
         DetailDescriptionText.Text = selected.Subtitle;
@@ -818,7 +957,7 @@ public sealed partial class MainWindow : Window
                 !ReferenceEquals(ResultsList.SelectedItem, selected))
                 return;
             DetailKindText.Text = details.Kind.ToUpperInvariant();
-            DetailLocationText.Text = details.Location;
+            SearchHighlight.SetText(DetailLocationText, details.Location);
             DetailSizeText.Text = details.Size;
             DetailModifiedText.Text = details.Modified;
             DetailDescriptionText.Text = details.Description;
@@ -855,7 +994,7 @@ public sealed partial class MainWindow : Window
     private void ClearDetailPanel()
     {
         DetailKindText.Text = "未选择结果";
-        DetailLocationText.Text = "—";
+        SearchHighlight.SetText(DetailLocationText, "—");
         DetailSizeText.Text = "—";
         DetailModifiedText.Text = "—";
         DetailDescriptionText.Text = "选择左侧结果以查看详细信息。";
@@ -886,7 +1025,7 @@ public sealed partial class MainWindow : Window
 
     private void Window_Deactivated(object sender, EventArgs e)
     {
-        if (IsVisible && !_contextMenuOpen && DateTimeOffset.UtcNow >= _ignoreDeactivateUntil)
+        if (!_previewMode && IsVisible && !_contextMenuOpen && DateTimeOffset.UtcNow >= _ignoreDeactivateUntil)
             HideLauncher();
     }
 
@@ -920,7 +1059,7 @@ public sealed partial class MainWindow : Window
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
-        if (_allowClose)
+        if (_allowClose || _previewMode)
             return;
         e.Cancel = true;
         HideLauncher();

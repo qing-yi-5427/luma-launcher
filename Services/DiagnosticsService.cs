@@ -6,8 +6,7 @@ namespace LumaLauncher.Services;
 internal static class DiagnosticsService
 {
     private static readonly object Sync = new();
-    private static readonly string DirectoryPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LumaLauncher");
+    private static readonly string DirectoryPath = AppDataPaths.DirectoryPath;
     private static readonly string LogPath = Path.Combine(DirectoryPath, "luma.log");
     private static bool _initialized;
 

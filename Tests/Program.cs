@@ -1,6 +1,15 @@
 using LumaLauncher.Services;
 using LumaLauncher.Models;
 using System.Diagnostics;
+using System.IO;
+
+AppDataPaths.DirectoryPath = Directory.CreateTempSubdirectory("Luma.Tests.").FullName;
+LumaLauncher.App.IsTestHost = true;
+if (args.Contains("--render")) { LumaLauncher.Tests.PreviewHarness.Render(); return; }
+if (args.Contains("--preview")) { LumaLauncher.Tests.PreviewHarness.Run(); return; }
+LumaLauncher.Tests.HighlightTests.Run();
+LumaLauncher.Tests.ReleaseRegressionTests.Run();
+await LumaLauncher.Tests.ReleaseRegressionTests.RunSearchAsync();
 
 var exact = FuzzyMatcher.Score("notepad", "Notepad", string.Empty);
 var fuzzy = FuzzyMatcher.Score("ntpd", "Notepad", string.Empty);
@@ -44,7 +53,7 @@ var calculationDetails = await ResultDetailsService.LoadAsync(new LauncherResult
 Require(calculationDetails.Kind == "计算结果" && calculationDetails.Location == "42",
     "Result details should describe non-file results without file-system access.");
 
-using (var builtIns = new SearchCoordinator())
+using (var builtIns = new SearchCoordinator((_, _, _, _) => Task.FromResult(new EverythingSearchResponse([], false, "isolated"))))
 {
     builtIns.Configure(new AppSettings
     {
@@ -59,6 +68,13 @@ using (var builtIns = new SearchCoordinator())
     var command = await builtIns.SearchAsync("note roadmap", 8, CancellationToken.None);
     Require(command.Results.FirstOrDefault()?.Kind == LauncherResultKind.Command &&
             command.Results[0].Arguments == "roadmap", "Custom command placeholders should receive query arguments.");
+}
+
+if (!args.Contains("--integration", StringComparer.OrdinalIgnoreCase))
+{
+    LumaLauncher.Tests.TrayMenuTests.Run();
+    Console.WriteLine("PASS isolated regression tests; no installed Everything required.");
+    return;
 }
 
 var apps = new AppIndexService();
@@ -76,13 +92,14 @@ var detectedEverything = EverythingSearchService.FindExecutable();
 Require(detectedEverything is not null, "Everything executable should be detected automatically.");
 Require(EverythingSearchService.FindExecutable("Manual", @"Z:\missing\Everything.exe") is null,
     "An invalid manual Everything path should be rejected.");
-everything.Configure("Auto", string.Empty);
-Require(await everything.EnsureRunningAsync(), "Everything should be available during launcher startup.");
+everything.Configure("Auto", string.Empty, "Connect");
+Console.WriteLine($"Read-only Everything DB-ready probe: {await everything.EnsureRunningAsync()}");
 var everythingResult = await everything.SearchAsync("Windows", 5, CancellationToken.None);
 Require(everythingResult.Available, $"Everything IPC should be available: {everythingResult.StatusText}");
 Require(everythingResult.Results.Count > 0, "Everything should return at least one Windows result.");
 
 using var coordinator = new SearchCoordinator();
+coordinator.Configure(new AppSettings { EverythingLifecycle = "Connect" });
 await coordinator.InitializeAsync();
 var combined = await coordinator.SearchAsync("Windows", 8, CancellationToken.None);
 Require(combined.Results.Count > 0, "Combined search should return results.");
@@ -92,16 +109,46 @@ var expanded = await coordinator.SearchAsync("exe", 64, CancellationToken.None);
 Require(expanded.Results.Count > 8, "Expanded searches should provide enough results for paging and filters.");
 var fullView = await coordinator.SearchAsync("exe", 128, CancellationToken.None);
 Require(fullView.Results.Count > 64, "Full-result searches should not be capped at 64 items.");
-coordinator.Configure(new AppSettings { ResultSort = ResultRanker.Name });
+var filesOnly = await coordinator.SearchAsync("ext:exe", 1024, CancellationToken.None, "File");
+Require(filesOnly.Results.Count > 512 && filesOnly.Results.All(item => item.Kind == LauncherResultKind.File),
+    "File provider must support filtering and loading beyond 512.");
+var foldersOnly = await coordinator.SearchAsync("Windows", 32, CancellationToken.None, "Folder");
+Require(foldersOnly.Results.Count > 0 && foldersOnly.Results.All(item => item.Kind == LauncherResultKind.Folder),
+    "Folder filter must reach Everything query.");
+using (var cancelled = new CancellationTokenSource())
+{
+    cancelled.Cancel();
+    try { await everything.SearchAsync("Windows", 100, cancelled.Token); throw new Exception("SDK cancellation ignored"); }
+    catch (OperationCanceledException) { }
+}
+foreach (var mode in new[] { ResultRanker.Name, ResultRanker.NameDescending, ResultRanker.SizeAscending, ResultRanker.SizeDescending, ResultRanker.ModifiedNewest, ResultRanker.ModifiedOldest })
+{
+    var small = await everything.SearchAsync("ext:exe", 16, CancellationToken.None, "File", mode);
+    var large = await everything.SearchAsync("ext:exe", 128, CancellationToken.None, "File", mode);
+    Require(small.Available && large.Available && small.Results.Count == 16, "Sorted SDK query unavailable: " + mode);
+    Require(small.Results.Select(item => item.Target).SequenceEqual(large.Results.Take(16).Select(item => item.Target)), "Global top-N prefix changed: " + mode);
+    var values = large.Results.Select(item => ResultRanker.IsSizeSort(mode) ? item.IndexedSize : item.IndexedModifiedFileTime).Where(value => value.HasValue).Select(value => value!.Value).ToArray();
+    if (mode is not (ResultRanker.Name or ResultRanker.NameDescending))
+    {
+        Require(values.Length > 0, "SDK metadata missing: " + mode);
+        var expected = mode is ResultRanker.SizeDescending or ResultRanker.ModifiedNewest ? values.OrderDescending() : values.Order();
+        Require(values.SequenceEqual(expected), "SDK sort direction wrong: " + mode);
+    }
+    Console.WriteLine($"PASS live global top-N {mode}: 16/128 prefix, indexed values={values.Length}");
+}
+Console.WriteLine($"PASS live provider files={filesOnly.Results.Count} folders={foldersOnly.Results.Count} has_more={filesOnly.HasMore}");
+coordinator.Configure(new AppSettings { ResultSort = ResultRanker.Name, EverythingLifecycle = "Connect" });
 var alphabetical = await coordinator.SearchAsync("Windows", 16, CancellationToken.None);
 var expectedAlphabetical = alphabetical.Results
-    .OrderBy(result => result.Title, StringComparer.CurrentCultureIgnoreCase)
+    .OrderBy(result => result.ProviderOrder.HasValue ? 0 : 1)
+    .ThenBy(result => result.ProviderOrder)
+    .ThenBy(result => result.Title, StringComparer.CurrentCultureIgnoreCase)
     .ThenBy(result => result.Kind)
     .Select(result => result.Target)
     .ToArray();
 Require(alphabetical.Results.Select(result => result.Target).SequenceEqual(expectedAlphabetical),
     "Name sorting should be applied by the search coordinator.");
-coordinator.Configure(new AppSettings());
+coordinator.Configure(new AppSettings { EverythingLifecycle = "Connect" });
 
 var latencies = new List<long>();
 foreach (var query in new[] { "win", "windows", "note", "exe", "program", "system" })
@@ -116,14 +163,7 @@ latencies.Sort();
 var p95 = latencies[(int)Math.Ceiling(latencies.Count * 0.95) - 1];
 Require(p95 < 1000, $"Warm search p95 should stay below 1000ms, actual {p95}ms.");
 
-if (args.Contains("--lifecycle", StringComparer.OrdinalIgnoreCase))
-{
-    everything.ShutdownClient();
-    await Task.Delay(700);
-    using var restartedEverything = new EverythingSearchService();
-    restartedEverything.Configure("Auto", string.Empty);
-    Require(await restartedEverything.EnsureRunningAsync(), "Everything should restart after a lifecycle shutdown.");
-}
+// Lifecycle mutation is deliberately excluded: integration must not stop/start the user's client.
 
 // Regression: tray right-click menu must build and lay out (see TrayMenuTests doc comment).
 LumaLauncher.Tests.TrayMenuTests.Run();

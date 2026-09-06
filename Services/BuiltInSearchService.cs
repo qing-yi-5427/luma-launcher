@@ -116,6 +116,10 @@ internal sealed class BuiltInSearchService
     private static bool TryCreateUrl(string query, out string url)
     {
         url = string.Empty;
+        if (!query.Contains("://", StringComparison.Ordinal) &&
+            new[] { ".exe", ".lnk", ".pdf", ".md", ".txt", ".doc", ".docx", ".xlsx", ".pptx", ".zip", ".json", ".cs", ".png", ".jpg" }
+                .Any(extension => query.EndsWith(extension, StringComparison.OrdinalIgnoreCase)))
+            return false;
         if (query.Contains(' ') || !DomainPattern.IsMatch(query))
             return false;
         var candidate = query.Contains("://", StringComparison.Ordinal) ? query : "https://" + query;

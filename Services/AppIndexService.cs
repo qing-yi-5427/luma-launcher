@@ -31,7 +31,7 @@ public sealed class AppIndexService
 
     public AppIndexService()
     {
-        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LumaLauncher");
+        var directory = AppDataPaths.DirectoryPath;
         Directory.CreateDirectory(directory);
         _cachePath = Path.Combine(directory, "apps.json");
         _entries = [];

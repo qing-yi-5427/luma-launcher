@@ -18,9 +18,11 @@ public sealed class IconService
     private readonly Dictionary<string, CacheEntry> _cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Task<ImageSource?>> _inflight = new(StringComparer.OrdinalIgnoreCase);
     private readonly LinkedList<string> _recency = new();
+    private readonly SemaphoreSlim _loadSlots = new(4, 4);
 
     public async Task<ImageSource?> GetAsync(string target, CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
         Task<ImageSource?> loadTask;
         lock (_sync)
         {
@@ -64,7 +66,9 @@ public sealed class IconService
         ImageSource? icon = null;
         try
         {
-            icon = await Task.Run(() => GetIcon(target)).ConfigureAwait(false);
+            await _loadSlots.WaitAsync().ConfigureAwait(false);
+            try { icon = await Task.Run(() => GetIcon(target)).ConfigureAwait(false); }
+            finally { _loadSlots.Release(); }
             return icon;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)

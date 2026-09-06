@@ -60,11 +60,15 @@ internal static class TrayMenuTests
             Content = new Border(),
             Width = 20, Height = 20, ShowInTaskbar = false, WindowStyle = WindowStyle.None
         };
-        host.Show();
+        // Do not show a native window or popup: tests must not steal foreground focus.
+        host.ShowActivated = false;
         try
         {
             menu.PlacementTarget = host;
-            menu.IsOpen = true; // 打开真实 Popup：容器生成 + Popup 布局（原崩溃点在 Popup.CreateWindow 内）
+            menu.ApplyTemplate();
+            menu.Measure(new Size(240, double.PositiveInfinity));
+            menu.Arrange(new Rect(new Point(), menu.DesiredSize));
+            menu.UpdateLayout();
             foreach (object entry in menu.Items)
             {
                 var container = menu.ItemContainerGenerator.ContainerFromItem(entry)
@@ -84,6 +88,26 @@ internal static class TrayMenuTests
         if (!double.IsFinite(menu.DesiredSize.Height) || menu.DesiredSize.Height <= 0)
             throw new InvalidOperationException($"托盘菜单测量尺寸异常：{menu.DesiredSize}");
 
+        var store = new SettingsStore();
+        var launcher = new MainWindow(store, true);
+        var settings = new SettingsWindow(store.Current.Copy());
+        launcher.ResultSortChanged += settings.SyncResultSort;
+        foreach (var (mode, label) in ResultRanker.Options)
+        {
+            var sortMenu = launcher.CreateSortMenu();
+            var item = sortMenu.Items.Cast<MenuItem>().Single(item => Equals(item.Tag, mode));
+            item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            if (store.Current.ResultSort != mode || !((Button)launcher.FindName("SortButton")).Content.ToString()!.Contains(label) ||
+                !Equals(((ComboBox)settings.FindName("ResultSortBox")).SelectedValue, mode))
+                throw new InvalidOperationException("Sort menu click/persistence/settings sync failed: " + mode);
+            if (launcher.CreateSortMenu().Items.Cast<MenuItem>().Count(item => item.IsChecked) != 1)
+                throw new InvalidOperationException("Sort check state is not exclusive");
+        }
+        var changed = store.Current.Copy(); changed.ResultSort = ResultRanker.Name;
+        store.Save(changed); launcher.ApplySettings();
+        if (!Equals(((Button)launcher.FindName("SortButton")).Tag, ResultRanker.Name))
+            throw new InvalidOperationException("Settings-to-search sort sync failed");
+        settings.Close(); launcher.CloseForExit();
         VerifyFullResultsLayout();
     }
 
@@ -113,7 +137,7 @@ internal static class TrayMenuTests
 
             var allResults = allResultsField.GetValue(launcher) as List<LauncherResult>
                 ?? throw new InvalidOperationException("完整结果集合类型异常");
-            for (var index = 0; index < 12; index++)
+            for (var index = 0; index < 600; index++)
             {
                 allResults.Add(new LauncherResult
                 {
@@ -126,16 +150,26 @@ internal static class TrayMenuTests
             }
             apply.Invoke(launcher, ["没有结果"]);
 
+            results.SelectedIndex = 1;
+            var selectedTarget = ((LauncherResult)results.SelectedItem).Target;
+            var applyBatch = typeof(MainWindow).GetMethod("ApplyBatch",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            applyBatch.Invoke(launcher, [new SearchBatch(allResults.ToArray(), "final", true), "empty", true]);
+            if ((results.SelectedItem as LauncherResult)?.Target != selectedTarget)
+                throw new InvalidOperationException("渐进搜索的最终结果重置了用户选择");
+
             enter.Invoke(launcher, null);
             launcher.Measure(new Size(1040, 680));
             launcher.Arrange(new Rect(0, 0, 1040, 680));
             launcher.UpdateLayout();
-            if (details.Visibility != Visibility.Visible || !Equals(more.Content, "收起") || results.Items.Count != 12)
+            if (details.Visibility != Visibility.Visible || !Equals(more.Content, "收起") || results.Items.Count != 600)
                 throw new InvalidOperationException("完整结果模式未正确展开");
+            if (!VirtualizingPanel.GetIsVirtualizing(results))
+                throw new InvalidOperationException("完整结果列表未启用虚拟化");
 
             leave.Invoke(launcher, [true]);
             launcher.UpdateLayout();
-            if (details.Visibility != Visibility.Collapsed || !Equals(more.Content, "查看全部"))
+            if (details.Visibility != Visibility.Collapsed || !Equals(more.Content, "展开结果"))
                 throw new InvalidOperationException("完整结果模式未正确收起");
         }
         finally

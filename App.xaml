@@ -3,6 +3,47 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template"><Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Track x:Name="PART_Track" IsDirectionReversed="True" Orientation="Vertical">
+                        <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Focusable="False" Opacity="0"/></Track.DecreaseRepeatButton>
+                        <Track.Thumb><Thumb Background="{DynamicResource MutedTextBrush}">
+                            <Thumb.Template><ControlTemplate TargetType="Thumb">
+                                <Border Background="{TemplateBinding Background}" CornerRadius="3" Margin="3,1" Opacity="0.6"/>
+                            </ControlTemplate></Thumb.Template>
+                        </Thumb></Track.Thumb>
+                        <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Focusable="False" Opacity="0"/></Track.IncreaseRepeatButton>
+                    </Track>
+                </ControlTemplate>
+            </Setter.Value></Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Template"><Setter.Value>
+                        <ControlTemplate TargetType="ScrollBar">
+                            <Track x:Name="PART_Track" Orientation="Horizontal">
+                                <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageLeftCommand" Focusable="False" Opacity="0"/></Track.DecreaseRepeatButton>
+                                <Track.Thumb><Thumb Background="{DynamicResource MutedTextBrush}">
+                                    <Thumb.Template><ControlTemplate TargetType="Thumb">
+                                        <Border Background="{TemplateBinding Background}" CornerRadius="3" Margin="1,3" Opacity="0.6"/>
+                                    </ControlTemplate></Thumb.Template>
+                                </Thumb></Track.Thumb>
+                                <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageRightCommand" Focusable="False" Opacity="0"/></Track.IncreaseRepeatButton>
+                            </Track>
+                        </ControlTemplate>
+                    </Setter.Value></Setter>
+                    <Setter Property="Width" Value="Auto"/>
+                    <Setter Property="Height" Value="12"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="KeyboardFocusStyle" TargetType="Control">
+            <Setter Property="Template"><Setter.Value><ControlTemplate>
+                <Border BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="6" Margin="2"/>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
         <SolidColorBrush x:Key="WindowBrush" Color="#F3121519"/>
         <SolidColorBrush x:Key="PanelBrush" Color="#FF1A1E23"/>
         <SolidColorBrush x:Key="PanelHoverBrush" Color="#FF22272D"/>
@@ -15,6 +56,8 @@
         <SolidColorBrush x:Key="AccentSoftBrush" Color="#2EE9A84C"/>
 
         <Style x:Key="QuietButton" TargetType="Button">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusStyle}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Background" Value="{DynamicResource PanelHoverBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/>

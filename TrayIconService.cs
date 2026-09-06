@@ -107,7 +107,11 @@ internal sealed class TrayIconService : IDisposable
         dispatcher.BeginInvoke(() =>
         {
             SetForegroundWindow(_window);
-            (_menu ??= CreateMenu()).IsOpen = true;
+            // Rebuild the detached popup so theme changes made while it was closed
+            // cannot leave cached resource values from the previous appearance.
+            if (_menu is not null) _menu.IsOpen = false;
+            _menu = CreateMenu();
+            _menu.IsOpen = true;
         }, System.Windows.Threading.DispatcherPriority.Input);
     }
 
@@ -123,11 +127,7 @@ internal sealed class TrayIconService : IDisposable
         var menu = new ContextMenu
         {
             Placement = PlacementMode.MousePoint,
-            Background = (System.Windows.Media.Brush)resources.FindResource("PanelBrush"),
-            Foreground = (System.Windows.Media.Brush)resources.FindResource("TextBrush"),
-            BorderBrush = (System.Windows.Media.Brush)resources.FindResource("StrokeBrush"),
-            BorderThickness = new System.Windows.Thickness(1),
-            Padding = new System.Windows.Thickness(4)
+            Style = (System.Windows.Style)resources.FindResource("LumaContextMenu")
         };
         menu.Items.Add(CreateItem("显示 Luma", toggleWindow));
         hotkeyItem = new MenuItem { Header = $"快捷键  {activeHotkey}", IsEnabled = false, Style = MenuStyle() };

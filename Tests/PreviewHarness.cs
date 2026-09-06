@@ -29,6 +29,8 @@ internal static class PreviewHarness
                     ThemeService.Apply(theme);
                     var menu = main.CreateSortMenu();
                     Save(menu, 240, 350, 1, $"sort-menu-{theme}.png");
+                    var trayMenu = TrayIconService.BuildMenu(() => { }, () => { }, () => Task.CompletedTask, () => { }, "Alt+Space", out _);
+                    Save(trayMenu, 240, 250, 2, $"tray-menu-{theme}.png");
                     ((System.Windows.Controls.Grid)main.FindName("ResultsHost")).Visibility = System.Windows.Visibility.Visible;
                     ((System.Windows.Controls.RowDefinition)main.FindName("ResultsRow")).Height = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
                     ((System.Windows.Controls.RowDefinition)main.FindName("FooterRow")).Height = new System.Windows.GridLength(38);

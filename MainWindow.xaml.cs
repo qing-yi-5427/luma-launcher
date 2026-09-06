@@ -620,12 +620,8 @@ public sealed partial class MainWindow : Window
     {
         var menu = new System.Windows.Controls.ContextMenu
         {
-            Background = (System.Windows.Media.Brush)FindResource("PanelBrush"),
-            Foreground = (System.Windows.Media.Brush)FindResource("TextBrush"),
-            BorderBrush = (System.Windows.Media.Brush)FindResource("StrokeBrush"),
-            BorderThickness = new Thickness(1), Padding = new Thickness(4)
+            Style = (Style)FindResource("LumaContextMenu")
         };
-        menu.Style = (Style)FindResource("SortMenuStyle");
         foreach (var (mode, label) in ResultRanker.Options)
         {
             var selected = mode == ResultRanker.Normalize(_settings.Current.ResultSort);
@@ -818,11 +814,7 @@ public sealed partial class MainWindow : Window
 
         var menu = new System.Windows.Controls.ContextMenu
         {
-            Background = (System.Windows.Media.Brush)FindResource("PanelBrush"),
-            Foreground = (System.Windows.Media.Brush)FindResource("TextBrush"),
-            BorderBrush = (System.Windows.Media.Brush)FindResource("StrokeBrush"),
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(4)
+            Style = (Style)FindResource("LumaContextMenu")
         };
         AddMenuItem(menu, selected.Kind == LauncherResultKind.Calculation ? "复制结果" : "打开", () => OpenSelected(false));
         if (selected.Kind is LauncherResultKind.Folder or LauncherResultKind.File && _quickSwitch.HasTarget)

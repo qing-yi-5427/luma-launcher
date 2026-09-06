@@ -17,20 +17,6 @@
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
-        <Style x:Key="SortMenuStyle" TargetType="ContextMenu">
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ContextMenu">
-                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="440">
-                                <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
-                            </ScrollViewer>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
         <Style x:Key="FilterButton" TargetType="Button" BasedOn="{StaticResource QuietButton}">
             <Setter Property="Padding" Value="10,4"/>
             <Setter Property="Margin" Value="0,0,6,0"/>

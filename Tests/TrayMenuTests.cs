@@ -66,6 +66,15 @@ internal static class TrayMenuTests
         {
             menu.PlacementTarget = host;
             menu.ApplyTemplate();
+            if (menu.Template.FindName("MenuSurface", menu) is not Border surface || surface.CornerRadius.TopLeft != 9)
+                throw new InvalidOperationException("托盘菜单回退到了系统默认背景模板");
+            ThemeService.Apply("Light");
+            var lightMenu = TrayIconService.BuildMenu(() => { }, () => { }, () => System.Threading.Tasks.Task.CompletedTask,
+                () => { }, "Alt+Space", out _);
+            lightMenu.ApplyTemplate();
+            if (!Equals(lightMenu.Background, app.FindResource("PanelBrush")))
+                throw new InvalidOperationException("重新打开的菜单未使用当前主题");
+            ThemeService.Apply("Dark");
             menu.Measure(new Size(240, double.PositiveInfinity));
             menu.Arrange(new Rect(new Point(), menu.DesiredSize));
             menu.UpdateLayout();

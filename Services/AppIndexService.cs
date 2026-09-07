@@ -4,7 +4,7 @@ using LumaLauncher.Models;
 
 namespace LumaLauncher.Services;
 
-public sealed class AppIndexService
+public sealed class AppIndexService : IDisposable
 {
     private const int CacheVersion = 1;
     private static readonly JsonSerializerOptions CacheJsonOptions = new() { WriteIndented = false };
@@ -28,6 +28,9 @@ public sealed class AppIndexService
     private AppEntry[] _entries;
     private string[] _customFolders = [];
     private int _ready;
+    private readonly List<FileSystemWatcher> _watchers = [];
+    private CancellationTokenSource? _watchDebounce;
+    private event Action? _indexChanged;
 
     public AppIndexService()
     {
@@ -35,6 +38,76 @@ public sealed class AppIndexService
         Directory.CreateDirectory(directory);
         _cachePath = Path.Combine(directory, "apps.json");
         _entries = [];
+        StartWatchers();
+    }
+
+    public event Action IndexChanged
+    {
+        add { _indexChanged += value; }
+        remove { _indexChanged -= value; }
+    }
+
+    private void StartWatchers()
+    {
+        var roots = new[]
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.StartMenu),
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Microsoft\Windows\Start Menu"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), @"Microsoft\Windows\Start Menu")
+        };
+        foreach (var root in roots.Where(Directory.Exists).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var watcher = new FileSystemWatcher(root)
+                {
+                    IncludeSubdirectories = true,
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite
+                };
+                watcher.Created += (_, _) => ScheduleRefresh();
+                watcher.Deleted += (_, _) => ScheduleRefresh();
+                watcher.Renamed += (_, _) => ScheduleRefresh();
+                watcher.Changed += (_, _) => ScheduleRefresh();
+                watcher.EnableRaisingEvents = true;
+                _watchers.Add(watcher);
+            }
+            catch (Exception exception)
+            {
+                DiagnosticsService.Log("app-index-watch", exception);
+            }
+        }
+    }
+
+    private void ScheduleRefresh()
+    {
+        _watchDebounce?.Cancel();
+        _watchDebounce?.Dispose();
+        _watchDebounce = new CancellationTokenSource();
+        var token = _watchDebounce.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), token).ConfigureAwait(false);
+                await ReloadAsync(token).ConfigureAwait(false);
+                _indexChanged?.Invoke();
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception exception) { DiagnosticsService.Log("app-index-auto", exception); }
+        }, token);
+    }
+
+    public void Dispose()
+    {
+        _watchDebounce?.Cancel();
+        _watchDebounce?.Dispose();
+        foreach (var watcher in _watchers)
+        {
+            watcher.EnableRaisingEvents = false;
+            watcher.Dispose();
+        }
+        _watchers.Clear();
     }
 
     public bool IsReady => Volatile.Read(ref _ready) != 0;

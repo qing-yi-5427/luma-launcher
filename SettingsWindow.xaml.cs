@@ -28,6 +28,38 @@ public sealed partial class SettingsWindow : Window
         ShowSection("General");
     }
 
+    private void SettingsSearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        if (SettingsNav is null)
+            return;
+        var q = (SettingsSearchBox.Text ?? string.Empty).Trim();
+        if (q.Length == 0)
+        {
+            foreach (System.Windows.Controls.ListBoxItem item in SettingsNav.Items)
+                item.Visibility = Visibility.Visible;
+            return;
+        }
+        var map = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["General"] = ["快捷键", "hotkey", "语言", "language", "密度", "density", "启动", "startup", "位置", "position"],
+            ["Appearance"] = ["主题", "theme", "外观", "墨青", "赭暮", "素笺", "晴空", "日夜"],
+            ["Search"] = ["排序", "sort", "别名", "alias", "命令", "command", "引擎", "engine", "目录", "folder"],
+            ["Sources"] = ["everything", "索引", "index", "windows", "数据源"],
+            ["Features"] = ["窗口", "window", "系统", "system", "书签", "bookmark", "游戏", "game", "预览", "preview", "快速切换"],
+            ["Privacy"] = ["历史", "history", "剪贴板", "clipboard", "隐私", "导入", "导出"],
+            ["About"] = ["更新", "update", "版本", "version", "许可", "license"]
+        };
+        foreach (System.Windows.Controls.ListBoxItem item in SettingsNav.Items)
+        {
+            var tag = item.Tag as string ?? string.Empty;
+            var visible = map.TryGetValue(tag, out var keys) &&
+                          keys.Any(k => k.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                                        q.Contains(k, StringComparison.OrdinalIgnoreCase)) ||
+                          (item.Content as string ?? string.Empty).Contains(q, StringComparison.OrdinalIgnoreCase);
+            item.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
     private void SettingsNav_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         if (SettingsNav?.SelectedItem is System.Windows.Controls.ListBoxItem { Tag: string tag })
@@ -77,6 +109,8 @@ public sealed partial class SettingsWindow : Window
         WindowsIndexBox.IsChecked = settings.PreferWindowsIndex;
         HistoryBox.IsChecked = settings.RecordHistory;
         QueryHistoryBox.IsChecked = settings.RecordQueryHistory;
+        ClipboardBox.IsChecked = settings.EnableClipboardHistory;
+        RememberPositionBox.IsChecked = settings.RememberWindowPosition;
         ResultSortBox.SelectedValue = ResultRanker.Normalize(settings.ResultSort);
         AliasesBox.Text = settings.Aliases;
         AppFoldersBox.Text = settings.AppFolders;
@@ -105,9 +139,25 @@ public sealed partial class SettingsWindow : Window
         var hotkey = HotkeyBox.Text.Trim();
         if (!HotkeyGesture.TryParse(hotkey, out _))
         {
-            EverythingPathHint.Text = "快捷键格式无效。示例：Alt+E、Ctrl+Shift+F12、Win+Space。";
+            EverythingPathHint.Text = "快捷键格式无效。点击输入框后按下组合键。";
             EverythingPathHint.SetResourceReference(ForegroundProperty, "AccentBrush");
             HotkeyBox.Focus();
+            return;
+        }
+        if (!HotkeyService.TryProbe(hotkey, out var probeError))
+        {
+            EverythingPathHint.Text = $"快捷键 {hotkey} 可能已被占用（错误 {probeError}），请换一个组合。";
+            EverythingPathHint.SetResourceReference(ForegroundProperty, "DangerBrush");
+            HotkeyBox.Focus();
+            return;
+        }
+
+        // Validate custom commands before save so format errors surface immediately.
+        var commandIssues = ValidateCustomCommands(CommandsBox.Text);
+        if (commandIssues.Count > 0)
+        {
+            EverythingPathHint.Text = "自定义命令有问题：" + commandIssues[0];
+            EverythingPathHint.SetResourceReference(ForegroundProperty, "DangerBrush");
             return;
         }
 
@@ -131,6 +181,8 @@ public sealed partial class SettingsWindow : Window
             PreferWindowsIndex = WindowsIndexBox.IsChecked == true,
             RecordHistory = HistoryBox.IsChecked == true,
             RecordQueryHistory = QueryHistoryBox.IsChecked == true,
+            EnableClipboardHistory = ClipboardBox.IsChecked == true,
+            RememberWindowPosition = RememberPositionBox.IsChecked == true,
             Language = LanguageBox.SelectedValue as string ?? "zh-CN",
             Aliases = AliasesBox.Text.Trim(),
             AppFolders = AppFoldersBox.Text.Trim(),
@@ -312,6 +364,29 @@ public sealed partial class SettingsWindow : Window
 
     private string _hotkeyBeforeCapture = "Alt+Space";
     private bool _capturingHotkey;
+
+    private static List<string> ValidateCustomCommands(string value)
+    {
+        var issues = new List<string>();
+        if (string.IsNullOrWhiteSpace(value))
+            return issues;
+        var lineNo = 0;
+        foreach (var line in value.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            lineNo++;
+            if (line.StartsWith('#'))
+                continue;
+            var parts = line.Split('|');
+            if (parts.Length < 3)
+            {
+                issues.Add($"第 {lineNo} 行字段不足（需 关键词|标题|程序）");
+                continue;
+            }
+            if (string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[2]))
+                issues.Add($"第 {lineNo} 行关键词或程序为空");
+        }
+        return issues;
+    }
 
     private void HotkeyBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
     {

@@ -11,6 +11,7 @@ public sealed class SearchCoordinator : IDisposable
     private readonly WindowSwitcherProvider _windows = new();
     private readonly SystemCommandsProvider _system = new();
     private readonly BrowserBookmarkProvider _bookmarks = new();
+    private readonly ClipboardHistoryService _clipboard = new();
     private readonly IconService _icons = new();
     private readonly UsageStore _usage = new();
     private readonly PreviewService _preview = new();
@@ -52,6 +53,7 @@ public sealed class SearchCoordinator : IDisposable
         _windows.Enabled = settings.EnableWindowSwitcher;
         _system.Enabled = settings.EnableSystemCommands;
         _bookmarks.Enabled = settings.EnableBookmarks;
+        _clipboard.Enabled = settings.EnableClipboardHistory;
         _aliases = ParseAliases(settings.Aliases);
         _resultSort = ResultRanker.Normalize(settings.ResultSort);
         _recordHistory = settings.RecordHistory;
@@ -76,6 +78,16 @@ public sealed class SearchCoordinator : IDisposable
         var builtInResults = await builtInTask.ConfigureAwait(false);
         if (_builtIns.ShouldShortCircuit(trimmed, builtInResults))
             return new SearchBatch(builtInResults.Take(maximumResults).ToList(), "Luma 内建工具", true);
+
+        if (_clipboard.Enabled &&
+            (trimmed.Equals("clip", StringComparison.OrdinalIgnoreCase) ||
+             trimmed.StartsWith("clip ", StringComparison.OrdinalIgnoreCase)))
+        {
+            var clips = _clipboard.Search(trimmed, Math.Min(maximumResults, 20));
+            if (clips.Count > 0)
+                return new SearchBatch(clips, "剪贴板历史", true);
+            return new SearchBatch([], "剪贴板历史为空（需在设置中开启）", true);
+        }
 
         var systemResults = await _system.QueryAsync(BuildContext(trimmed, maximumResults, filter, sortMode), token)
             .ConfigureAwait(false);
@@ -217,5 +229,7 @@ public sealed class SearchCoordinator : IDisposable
     {
         _icons.Trim(0);
         _files.ShutdownClient();
+        _apps.Dispose();
+        _clipboard.Dispose();
     }
 }

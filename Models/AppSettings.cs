@@ -30,6 +30,11 @@ public sealed class AppSettings
     public string Language { get; set; } = "zh-CN";
     public bool RecordQueryHistory { get; set; } = true;
     public string Density { get; set; } = "Comfortable";
+    public bool EnableClipboardHistory { get; set; }
+    public bool ShowOnboarding { get; set; } = true;
+    public double? WindowLeft { get; set; }
+    public double? WindowTop { get; set; }
+    public bool RememberWindowPosition { get; set; }
 
     public AppSettings Copy() => new()
     {
@@ -58,7 +63,12 @@ public sealed class AppSettings
         PreferWindowsIndex = PreferWindowsIndex,
         Language = Language,
         RecordQueryHistory = RecordQueryHistory,
-        Density = Density
+        Density = Density,
+        EnableClipboardHistory = EnableClipboardHistory,
+        ShowOnboarding = ShowOnboarding,
+        WindowLeft = WindowLeft,
+        WindowTop = WindowTop,
+        RememberWindowPosition = RememberWindowPosition
     };
 
     public AppSettings Normalize()

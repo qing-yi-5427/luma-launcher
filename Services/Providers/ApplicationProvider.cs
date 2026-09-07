@@ -3,7 +3,7 @@ using LumaLauncher.Services.Providers;
 
 namespace LumaLauncher.Services.Providers;
 
-public sealed class ApplicationProvider : ILumaProvider
+public sealed class ApplicationProvider : ILumaProvider, IDisposable
 {
     private readonly AppIndexService _apps = new();
     private Task? _initializeTask;
@@ -14,6 +14,7 @@ public sealed class ApplicationProvider : ILumaProvider
 
     public bool IsReady => _apps.IsReady;
     public int Count => _apps.Count;
+    public AppIndexService Index => _apps;
 
     public Task InitializeAsync(CancellationToken token) => _initializeTask ??= _apps.InitializeAsync(token);
 
@@ -33,4 +34,6 @@ public sealed class ApplicationProvider : ILumaProvider
         }
         return _apps.Search(context.Prepared, Math.Max(context.MaximumResults, _apps.Count), context.Usage, context.Aliases);
     }
+
+    public void Dispose() => _apps.Dispose();
 }

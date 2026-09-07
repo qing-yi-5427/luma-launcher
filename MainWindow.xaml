@@ -154,7 +154,8 @@
                                  ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True"
                                  VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel"
                                  SelectionChanged="ResultsList_SelectionChanged" MouseDoubleClick="ResultsList_MouseDoubleClick"
-                                 PreviewMouseRightButtonDown="ResultsList_PreviewMouseRightButtonDown">
+                                 PreviewMouseRightButtonDown="ResultsList_PreviewMouseRightButtonDown"
+                                 AllowDrop="True" PreviewMouseMove="ResultsList_PreviewMouseMove">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Grid Loaded="ResultItem_Loaded" DataContextChanged="ResultItem_DataContextChanged"
@@ -336,6 +337,7 @@
                                Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"
                                ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <TextBlock Text="F1 帮助" FontSize="11" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,12,0"/>
                         <TextBlock Text="↵ 打开" FontSize="11" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,12,0"/>
                         <TextBlock Text="⌃↵ 定位" FontSize="11" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,12,0"/>
                         <TextBlock Text="⌃H 历史" FontSize="11" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,12,0"/>
@@ -347,6 +349,25 @@
                                 Margin="4,0,0,0" Click="LoadMore_Click" Visibility="Collapsed"/>
                     </StackPanel>
                 </Grid>
+            </Border>
+
+            <!-- Help overlay (F1) -->
+            <Border x:Name="HelpOverlay" Grid.Row="0" Grid.RowSpan="4" Visibility="Collapsed"
+                    Background="#CC000000" CornerRadius="8" Margin="8"
+                    MouseLeftButtonDown="HelpOverlay_Click">
+                <Border Background="{DynamicResource PanelBrush}" CornerRadius="10" Margin="36"
+                        Padding="28,22" VerticalAlignment="Center" HorizontalAlignment="Center"
+                        BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
+                    <StackPanel>
+                        <TextBlock x:Name="HelpTitleText" Text="快捷键" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource AccentBrush}" Margin="0,0,0,12"/>
+                        <TextBlock FontSize="12.5" Foreground="{DynamicResource TextBrush}" LineHeight="22"
+                                   Text="Alt+Space（可改）　显示 / 隐藏&#x0a;↑ ↓　选择结果&#x0a;Enter / Ctrl+Enter / Ctrl+Shift+Enter　打开 / 定位 / 管理员&#x0a;Tab　补全历史查询&#x0a;Ctrl+H　搜索历史&#x0a;Ctrl+G　切换文件对话框&#x0a;Ctrl+,　设置&#x0a;Ctrl+F12　游戏模式&#x0a;F1　开关本帮助&#x0a;Esc　退出全结果 / 隐藏"/>
+                        <TextBlock Text="= 计算　? 网页　win 窗口　clip 剪贴板" FontSize="11.5"
+                                   Foreground="{DynamicResource MutedTextBrush}" Margin="0,14,0,0"/>
+                        <TextBlock Text="点击任意处关闭" FontSize="11" Foreground="{DynamicResource FaintTextBrush}" Margin="0,10,0,0"/>
+                    </StackPanel>
+                </Border>
             </Border>
         </Grid>
     </Border>

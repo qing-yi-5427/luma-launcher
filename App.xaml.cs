@@ -58,7 +58,16 @@ public sealed partial class App : System.Windows.Application
             !File.Exists(Path.Combine(AppDataPaths.DirectoryPath, "settings.json")))
             OpenSettings();
         else if (!e.Args.Contains("--silent", StringComparer.OrdinalIgnoreCase))
+        {
             _launcherWindow.ShowLauncher();
+            if (_settingsStore.Current.ShowOnboarding)
+            {
+                _launcherWindow.ShowHelpOnce();
+                var next = _settingsStore.Current.Copy();
+                next.ShowOnboarding = false;
+                try { _settingsStore.Save(next); } catch { }
+            }
+        }
         else
             _launcherWindow.ScheduleIdleTrim();
     }
@@ -95,6 +104,11 @@ public sealed partial class App : System.Windows.Application
     {
         if (_settingsStore is null || _launcherWindow is null)
             return;
+        // Preserve window geometry and dismiss onboarding; the settings dialog
+        // builds a fresh AppSettings without those runtime fields.
+        settings.WindowLeft = _settingsStore.Current.WindowLeft;
+        settings.WindowTop = _settingsStore.Current.WindowTop;
+        settings.ShowOnboarding = false;
         _settingsStore.Save(settings);
         StartupService.Apply(settings.StartWithWindows);
         ThemeService.ConfigureAutoPair(settings.DayTheme, settings.NightTheme);

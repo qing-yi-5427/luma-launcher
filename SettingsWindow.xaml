@@ -168,9 +168,14 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <ListBox x:Name="SettingsNav" Grid.Column="0" Background="Transparent" BorderThickness="0"
-                         SelectedIndex="0" SelectionChanged="SettingsNav_SelectionChanged"
-                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                <DockPanel Grid.Column="0" LastChildFill="True">
+                    <TextBox x:Name="SettingsSearchBox" DockPanel.Dock="Top" Margin="0,0,0,8"
+                             Height="30" FontSize="12" Padding="8,4"
+                             TextChanged="SettingsSearchBox_TextChanged"
+                             ToolTip="筛选设置分区"/>
+                    <ListBox x:Name="SettingsNav" Background="Transparent" BorderThickness="0"
+                             SelectedIndex="0" SelectionChanged="SettingsNav_SelectionChanged"
+                             ScrollViewer.VerticalScrollBarVisibility="Disabled">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="12,10"/>
@@ -204,7 +209,8 @@
                     <ListBoxItem Content="能力" Tag="Features"/>
                     <ListBoxItem Content="隐私" Tag="Privacy"/>
                     <ListBoxItem Content="关于" Tag="About"/>
-                </ListBox>
+                    </ListBox>
+                </DockPanel>
 
                 <ScrollViewer x:Name="SettingsScroll" Grid.Column="2" VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
@@ -235,6 +241,7 @@
                             </ComboBox>
 
                             <CheckBox x:Name="StartupBox" Content="登录 Windows 后自动启动" Margin="2,18,0,0"/>
+                            <CheckBox x:Name="RememberPositionBox" Content="记住主窗口位置（多显示器）" Margin="2,12,0,0"/>
                         </StackPanel>
 
                         <!-- 外观 -->
@@ -362,6 +369,7 @@
                         <StackPanel x:Name="SectionPrivacy" Visibility="Collapsed">
                             <CheckBox x:Name="HistoryBox" Content="记录使用历史，用于推荐和排序"/>
                             <CheckBox x:Name="QueryHistoryBox" Content="记录搜索词历史（Ctrl+H / Tab 补全）" Margin="0,12,0,0"/>
+                            <CheckBox x:Name="ClipboardBox" Content="剪贴板历史（输入 clip 搜索，仅保存在内存）" Margin="0,12,0,0"/>
                             <TextBlock Text="配置、收藏和使用历史保存在本机。暂停记录不会删除已有数据。"
                                        TextWrapping="Wrap" FontSize="11.5" Margin="0,10,0,12"
                                        Foreground="{DynamicResource MutedTextBrush}"/>

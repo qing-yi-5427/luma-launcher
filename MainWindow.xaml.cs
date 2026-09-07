@@ -175,7 +175,16 @@ public sealed partial class MainWindow : Window
         _ignoreDeactivateUntil = DateTimeOffset.UtcNow.AddMilliseconds(900);
         WindowState = WindowState.Normal;
         UpdateLayout();
-        PositionOnCursorMonitor();
+        if (_settings.Current.RememberWindowPosition &&
+            _settings.Current.WindowLeft is double left && _settings.Current.WindowTop is double top)
+        {
+            Left = left;
+            Top = top;
+        }
+        else
+        {
+            PositionOnCursorMonitor();
+        }
         Activate();
         SearchBox.Focus();
         Keyboard.Focus(SearchBox);
@@ -192,6 +201,8 @@ public sealed partial class MainWindow : Window
     {
         _composing = false;
         _searchCancellation?.Cancel();
+        if (HelpOverlay is not null)
+            HelpOverlay.Visibility = Visibility.Collapsed;
         if (_fullResultsMode)
             LeaveFullResultsMode(animate: false);
         Hide();
@@ -769,6 +780,12 @@ public sealed partial class MainWindow : Window
         if (e.OriginalSource is System.Windows.Controls.Primitives.ButtonBase && e.Key is Key.Enter or Key.Space) return;
         if (e.Key == Key.Escape)
         {
+            if (HelpOverlay?.Visibility == Visibility.Visible)
+            {
+                HelpOverlay.Visibility = Visibility.Collapsed;
+                e.Handled = true;
+                return;
+            }
             if (_fullResultsMode)
                 LeaveFullResultsMode();
             else
@@ -803,6 +820,13 @@ public sealed partial class MainWindow : Window
                 e.Handled = true;
                 return;
             }
+        }
+
+        if (e.Key == Key.F1)
+        {
+            ToggleHelpOverlay();
+            e.Handled = true;
+            return;
         }
 
         if (e.Key == Key.H && Keyboard.Modifiers == ModifierKeys.Control)
@@ -1246,12 +1270,79 @@ public sealed partial class MainWindow : Window
             HideLauncher();
     }
 
+    private void ToggleHelpOverlay()
+    {
+        if (HelpOverlay is null)
+            return;
+        HelpTitleText.Text = UiStrings.Get("HelpTitle");
+        HelpOverlay.Visibility = HelpOverlay.Visibility == Visibility.Visible
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
+    public void ShowHelpOnce() => ToggleHelpOverlay();
+
+    private void HelpOverlay_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (HelpOverlay is not null)
+            HelpOverlay.Visibility = Visibility.Collapsed;
+        e.Handled = true;
+    }
+
+    private Point _dragStart;
+    private bool _dragging;
+
+    private void ResultsList_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (ResultsList.SelectedItem is not LauncherResult selected || !selected.IsFileSystemItem)
+            return;
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            _dragging = false;
+            return;
+        }
+        var pos = e.GetPosition(ResultsList);
+        if (!_dragging)
+        {
+            _dragStart = pos;
+            _dragging = true;
+            return;
+        }
+        if (Math.Abs(pos.X - _dragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(pos.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
+            return;
+        _dragging = false;
+        try
+        {
+            var data = new DataObject(DataFormats.FileDrop, new[] { selected.Target });
+            DragDrop.DoDragDrop(ResultsList, data, DragDropEffects.Copy);
+        }
+        catch (Exception exception)
+        {
+            DiagnosticsService.Log("drag-drop", exception);
+        }
+    }
+
     private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton != MouseButton.Left || e.ClickCount != 1 || IsInteractiveElement(e.OriginalSource as DependencyObject))
             return;
         try { DragMove(); }
         catch (InvalidOperationException) { }
+        if (_settings.Current.RememberWindowPosition)
+        {
+            try
+            {
+                var next = _settings.Current.Copy();
+                next.WindowLeft = Left;
+                next.WindowTop = Top;
+                _settings.Save(next);
+            }
+            catch (Exception exception)
+            {
+                DiagnosticsService.Log("window-position-save", exception);
+            }
+        }
     }
 
     private bool IsInteractiveElement(DependencyObject? element)

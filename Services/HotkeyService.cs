@@ -5,6 +5,7 @@ public sealed record HotkeyRegistration(string Requested, string Active, bool Us
 public sealed class HotkeyService
 {
     private const int HotkeyId = 0x4C55;
+    private const int ProbeId = 0x4C56;
     private IntPtr _window;
     private bool _registered;
 
@@ -30,6 +31,37 @@ public sealed class HotkeyService
         }
 
         return new HotkeyRegistration(requested, "未注册", true, lastError);
+    }
+
+    /// <summary>Probe whether a gesture can be registered without touching the live hotkey.</summary>
+    public static bool TryProbe(string gesture, out int errorCode)
+    {
+        errorCode = 0;
+        if (!HotkeyGesture.TryParse(gesture, out var parsed))
+            return false;
+
+        var source = new System.Windows.Interop.HwndSource(new System.Windows.Interop.HwndSourceParameters("LumaHotkeyProbe")
+        {
+            Width = 0,
+            Height = 0,
+            WindowStyle = 0
+        });
+        try
+        {
+            var handle = source.Handle;
+            var modifiers = parsed.Modifiers | NativeMethods.ModNoRepeat;
+            if (NativeMethods.RegisterHotKey(handle, ProbeId, modifiers, parsed.VirtualKey))
+            {
+                NativeMethods.UnregisterHotKey(handle, ProbeId);
+                return true;
+            }
+            errorCode = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+            return false;
+        }
+        finally
+        {
+            source.Dispose();
+        }
     }
 
     public bool IsHotkeyMessage(int message, IntPtr wParam) =>

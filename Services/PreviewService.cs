@@ -117,6 +117,9 @@ public sealed class PreviewService
         _ => "文件"
     };
 
+    private const int MaxCacheFiles = 200;
+    private const long MaxCacheBytes = 40L * 1024 * 1024;
+
     public void TrimCache()
     {
         try
@@ -124,11 +127,24 @@ public sealed class PreviewService
             var cache = Path.Combine(AppDataPaths.DirectoryPath, "preview-cache");
             if (!Directory.Exists(cache))
                 return;
+            var files = Directory.EnumerateFiles(cache)
+                .Select(path => new FileInfo(path))
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .ToList();
             var cutoff = DateTime.UtcNow.AddHours(-6);
-            foreach (var file in Directory.EnumerateFiles(cache))
+            long total = 0;
+            var index = 0;
+            foreach (var file in files)
             {
-                if (File.GetLastWriteTimeUtc(file) < cutoff)
-                    File.Delete(file);
+                index++;
+                var tooOld = file.LastWriteTimeUtc < cutoff;
+                var tooMany = index > MaxCacheFiles;
+                total += file.Length;
+                if (tooOld || tooMany || total > MaxCacheBytes)
+                {
+                    try { file.Delete(); }
+                    catch { }
+                }
             }
         }
         catch (Exception exception)

@@ -3,8 +3,28 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
+        <!-- ── Design tokens (default = InkTeal night) ─────────────────── -->
+        <SolidColorBrush x:Key="WindowBrush" Color="#0D1218"/>
+        <SolidColorBrush x:Key="PanelBrush" Color="#141B23"/>
+        <SolidColorBrush x:Key="PanelHoverBrush" Color="#1C2632"/>
+        <SolidColorBrush x:Key="PanelSelectedBrush" Color="#243444"/>
+        <SolidColorBrush x:Key="TextBrush" Color="#E6EEF5"/>
+        <SolidColorBrush x:Key="MutedTextBrush" Color="#8A9AAB"/>
+        <SolidColorBrush x:Key="FaintTextBrush" Color="#5A6B7C"/>
+        <SolidColorBrush x:Key="StrokeBrush" Color="#2A3644"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="#3FD9B8"/>
+        <SolidColorBrush x:Key="AccentSoftBrush" Color="#333FD9B8"/>
+        <SolidColorBrush x:Key="SurfaceSubtleBrush" Color="#1C2632"/>
+        <SolidColorBrush x:Key="SurfaceElevatedBrush" Color="#243444"/>
+        <SolidColorBrush x:Key="DangerBrush" Color="#F07178"/>
+        <SolidColorBrush x:Key="SuccessBrush" Color="#7FD99A"/>
+
+        <CornerRadius x:Key="RadiusSm">6</CornerRadius>
+        <CornerRadius x:Key="RadiusMd">10</CornerRadius>
+        <CornerRadius x:Key="RadiusLg">16</CornerRadius>
+
         <Style TargetType="ScrollBar">
-            <Setter Property="Width" Value="12"/>
+            <Setter Property="Width" Value="10"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Template"><Setter.Value>
                 <ControlTemplate TargetType="ScrollBar">
@@ -12,7 +32,7 @@
                         <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Focusable="False" Opacity="0"/></Track.DecreaseRepeatButton>
                         <Track.Thumb><Thumb Background="{DynamicResource MutedTextBrush}">
                             <Thumb.Template><ControlTemplate TargetType="Thumb">
-                                <Border Background="{TemplateBinding Background}" CornerRadius="3" Margin="3,1" Opacity="0.6"/>
+                                <Border Background="{TemplateBinding Background}" CornerRadius="3" Margin="3,1" Opacity="0.45"/>
                             </ControlTemplate></Thumb.Template>
                         </Thumb></Track.Thumb>
                         <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Focusable="False" Opacity="0"/></Track.IncreaseRepeatButton>
@@ -27,7 +47,7 @@
                                 <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageLeftCommand" Focusable="False" Opacity="0"/></Track.DecreaseRepeatButton>
                                 <Track.Thumb><Thumb Background="{DynamicResource MutedTextBrush}">
                                     <Thumb.Template><ControlTemplate TargetType="Thumb">
-                                        <Border Background="{TemplateBinding Background}" CornerRadius="3" Margin="1,3" Opacity="0.6"/>
+                                        <Border Background="{TemplateBinding Background}" CornerRadius="3" Margin="1,3" Opacity="0.45"/>
                                     </ControlTemplate></Thumb.Template>
                                 </Thumb></Track.Thumb>
                                 <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageRightCommand" Focusable="False" Opacity="0"/></Track.IncreaseRepeatButton>
@@ -35,49 +55,107 @@
                         </ControlTemplate>
                     </Setter.Value></Setter>
                     <Setter Property="Width" Value="Auto"/>
-                    <Setter Property="Height" Value="12"/>
+                    <Setter Property="Height" Value="10"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
+
         <Style x:Key="KeyboardFocusStyle" TargetType="Control">
             <Setter Property="Template"><Setter.Value><ControlTemplate>
-                <Border BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="6" Margin="2"/>
+                <Border BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="{DynamicResource RadiusSm}" Margin="2"/>
             </ControlTemplate></Setter.Value></Setter>
         </Style>
-        <SolidColorBrush x:Key="WindowBrush" Color="#0D1218"/>
-        <SolidColorBrush x:Key="PanelBrush" Color="#141B23"/>
-        <SolidColorBrush x:Key="PanelHoverBrush" Color="#1C2632"/>
-        <SolidColorBrush x:Key="PanelSelectedBrush" Color="#243444"/>
-        <SolidColorBrush x:Key="TextBrush" Color="#E6EEF5"/>
-        <SolidColorBrush x:Key="MutedTextBrush" Color="#8A9AAB"/>
-        <SolidColorBrush x:Key="FaintTextBrush" Color="#5A6B7C"/>
-        <SolidColorBrush x:Key="StrokeBrush" Color="#2A3644"/>
-        <SolidColorBrush x:Key="AccentBrush" Color="#3FD9B8"/>
-        <SolidColorBrush x:Key="AccentSoftBrush" Color="#333FD9B8"/>
 
+        <!-- Ghost / quiet button -->
         <Style x:Key="QuietButton" TargetType="Button">
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusStyle}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-            <Setter Property="Background" Value="{DynamicResource PanelHoverBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource SurfaceSubtleBrush}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="Padding" Value="14,8"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chrome" CornerRadius="7" Background="{TemplateBinding Background}"
+                        <Border x:Name="Chrome" CornerRadius="{DynamicResource RadiusSm}" Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource PanelHoverBrush}"/>
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Chrome" Property="Opacity" Value="0.75"/>
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.78"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Pill chip used for filters -->
+        <Style x:Key="ChipButton" TargetType="Button">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource SurfaceSubtleBrush}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusStyle}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" CornerRadius="999" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource PanelHoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.8"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Primary accent button -->
+        <Style x:Key="AccentButton" TargetType="Button">
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="16,9"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusStyle}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" CornerRadius="{DynamicResource RadiusSm}" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource WindowBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.85"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -93,13 +171,13 @@
             <Setter Property="Padding" Value="5"/>
             <Setter Property="FontFamily" Value="Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI"/>
             <Setter Property="FontSize" Value="13"/>
-            <Setter Property="HasDropShadow" Value="False"/>
+            <Setter Property="HasDropShadow" Value="True"/>
             <Setter Property="SnapsToDevicePixels" Value="True"/>
             <Setter Property="Template"><Setter.Value>
                 <ControlTemplate TargetType="ContextMenu">
                     <Border x:Name="MenuSurface" Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="9" Padding="{TemplateBinding Padding}">
+                            CornerRadius="{DynamicResource RadiusMd}" Padding="{TemplateBinding Padding}">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="440">
                             <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
                         </ScrollViewer>
@@ -110,13 +188,13 @@
         <Style x:Key="LumaMenuItem" TargetType="MenuItem">
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Padding" Value="12,7"/>
+            <Setter Property="Padding" Value="12,8"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="MenuItem">
                         <Border x:Name="MenuChrome" Background="{TemplateBinding Background}"
-                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                CornerRadius="{DynamicResource RadiusSm}" Padding="{TemplateBinding Padding}">
                             <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -132,8 +210,6 @@
             </Setter>
         </Style>
 
-        <!--Separator 风格：菜单里 Separator 是独立控件类型，绝不能套用 MenuItem 的 ItemContainerStyle，
-            否则容器生成时抛 InvalidOperationException（曾导致托盘右键后 UI 线程卡死）。-->
         <Style x:Key="LumaMenuSeparator" TargetType="Separator">
             <Setter Property="Background" Value="{DynamicResource StrokeBrush}"/>
             <Setter Property="Margin" Value="8,4"/>

@@ -25,6 +25,27 @@ public sealed partial class SettingsWindow : Window
         LoadControls(settings);
         VersionText.Text = $"Luma {UpdateService.CurrentVersion} · Windows x64";
         SourceInitialized += (_, _) => ApplyDwmStyling();
+        ShowSection("General");
+    }
+
+    private void SettingsNav_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (SettingsNav?.SelectedItem is System.Windows.Controls.ListBoxItem { Tag: string tag })
+            ShowSection(tag);
+    }
+
+    private void ShowSection(string tag)
+    {
+        if (SectionGeneral is null)
+            return;
+        SectionGeneral.Visibility = tag == "General" ? Visibility.Visible : Visibility.Collapsed;
+        SectionAppearance.Visibility = tag == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
+        SectionSearch.Visibility = tag == "Search" ? Visibility.Visible : Visibility.Collapsed;
+        SectionSources.Visibility = tag == "Sources" ? Visibility.Visible : Visibility.Collapsed;
+        SectionFeatures.Visibility = tag == "Features" ? Visibility.Visible : Visibility.Collapsed;
+        SectionPrivacy.Visibility = tag == "Privacy" ? Visibility.Visible : Visibility.Collapsed;
+        SectionAbout.Visibility = tag == "About" ? Visibility.Visible : Visibility.Collapsed;
+        SettingsScroll?.ScrollToHome();
     }
 
     private void LoadControls(AppSettings settings)
@@ -33,6 +54,7 @@ public sealed partial class SettingsWindow : Window
         _webSearchUrl = settings.WebSearchUrl;
         HotkeyBox.Text = settings.Hotkey;
         LanguageBox.SelectedValue = settings.Language;
+        DensityBox.SelectedValue = settings.Density == "Compact" ? "Compact" : "Comfortable";
         ThemeBox.SelectedValue = ThemeService.ResolveRequestedForUi(settings.Theme);
         DayThemeBox.SelectedValue = settings.DayTheme;
         NightThemeBox.SelectedValue = settings.NightTheme;
@@ -95,6 +117,7 @@ public sealed partial class SettingsWindow : Window
             Theme = ThemeBox.SelectedValue as string ?? "Auto",
             DayTheme = DayThemeBox.SelectedValue as string ?? "Paper",
             NightTheme = NightThemeBox.SelectedValue as string ?? "InkTeal",
+            Density = DensityBox.SelectedValue as string ?? "Comfortable",
             StartWithWindows = StartupBox.IsChecked == true,
             EverythingPathMode = everythingMode,
             EverythingPath = everythingPath,

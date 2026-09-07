@@ -29,6 +29,7 @@ public sealed class AppSettings
     public bool PreferWindowsIndex { get; set; }
     public string Language { get; set; } = "zh-CN";
     public bool RecordQueryHistory { get; set; } = true;
+    public string Density { get; set; } = "Comfortable";
 
     public AppSettings Copy() => new()
     {
@@ -56,7 +57,8 @@ public sealed class AppSettings
         EnablePreview = EnablePreview,
         PreferWindowsIndex = PreferWindowsIndex,
         Language = Language,
-        RecordQueryHistory = RecordQueryHistory
+        RecordQueryHistory = RecordQueryHistory,
+        Density = Density
     };
 
     public AppSettings Normalize()
@@ -77,6 +79,7 @@ public sealed class AppSettings
         if (!knownThemes.Contains(Theme)) Theme = "Auto";
         if (DayTheme is not ("Paper" or "Sky")) DayTheme = "Paper";
         if (NightTheme is not ("InkTeal" or "Dusk")) NightTheme = "InkTeal";
+        Density = Density == "Compact" ? "Compact" : "Comfortable";
 
         EverythingPathMode = EverythingPathMode == "Manual" ? "Manual" : "Auto";
         EverythingLifecycle = EverythingLifecycle == "Connect" ? "Connect" : "Managed";

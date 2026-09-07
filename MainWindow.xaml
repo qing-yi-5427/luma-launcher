@@ -4,7 +4,7 @@
         xmlns:services="clr-namespace:LumaLauncher.Services"
         services:SearchHighlight.Query="{Binding Text, ElementName=SearchBox}"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="Luma" Icon="/Luma;component/Assets/Luma.ico" Width="700" Height="94"
+        Title="Luma" Icon="/Luma;component/Assets/Luma.ico" Width="700" Height="76"
         WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="False"
         Background="{DynamicResource WindowBrush}" ShowInTaskbar="False" Topmost="True"
         FontFamily="Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI" Foreground="{DynamicResource TextBrush}"
@@ -13,20 +13,20 @@
         Deactivated="Window_Deactivated" PreviewKeyDown="Window_PreviewKeyDown"
         MouseLeftButtonDown="Window_MouseLeftButtonDown">
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" CornerRadius="14" GlassFrameThickness="0" ResizeBorderThickness="0" UseAeroCaptionButtons="False"/>
+        <shell:WindowChrome CaptionHeight="0" CornerRadius="16" GlassFrameThickness="0" ResizeBorderThickness="0" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
-        <Style x:Key="FilterButton" TargetType="Button" BasedOn="{StaticResource QuietButton}">
-            <Setter Property="Padding" Value="10,4"/>
-            <Setter Property="Margin" Value="0,0,6,0"/>
+        <Style x:Key="GhostFooterButton" TargetType="Button" BasedOn="{StaticResource QuietButton}">
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Margin" Value="0,0,0,0"/>
             <Setter Property="FontSize" Value="11.5"/>
-            <Setter Property="MinWidth" Value="44"/>
+            <Setter Property="Background" Value="Transparent"/>
         </Style>
         <Style x:Key="DetailActionButton" TargetType="Button" BasedOn="{StaticResource QuietButton}">
-            <Setter Property="Padding" Value="12,8"/>
-            <Setter Property="Margin" Value="0,0,8,8"/>
-            <Setter Property="MinWidth" Value="82"/>
+            <Setter Property="Padding" Value="11,7"/>
+            <Setter Property="Margin" Value="0,0,6,6"/>
+            <Setter Property="MinWidth" Value="72"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
         </Style>
         <Style TargetType="ListBoxItem">
@@ -38,11 +38,13 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="ItemChrome" Background="Transparent" CornerRadius="9" SnapsToDevicePixels="True">
+                        <Border x:Name="ItemChrome" Background="Transparent" CornerRadius="{DynamicResource RadiusMd}"
+                                SnapsToDevicePixels="True" Margin="6,1">
                             <Grid>
-                                <Border x:Name="AccentRail" Width="3" Height="24" CornerRadius="2"
-                                        Background="{DynamicResource AccentBrush}" HorizontalAlignment="Left" Opacity="0"/>
-                                <ContentPresenter Margin="12,0,10,0"/>
+                                <Border x:Name="AccentRail" Width="3" Height="26" CornerRadius="2"
+                                        Background="{DynamicResource AccentBrush}" HorizontalAlignment="Left"
+                                        Margin="2,0,0,0" Opacity="0"/>
+                                <ContentPresenter Margin="10,0,10,0"/>
                             </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -50,7 +52,7 @@
                                 <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource PanelHoverBrush}"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource PanelSelectedBrush}"/>
+                                <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource SurfaceElevatedBrush}"/>
                                 <Setter TargetName="AccentRail" Property="Opacity" Value="1"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -60,68 +62,70 @@
         </Style>
     </Window.Resources>
 
-    <Border x:Name="WindowChrome" Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource StrokeBrush}"
-            BorderThickness="1" CornerRadius="14" ClipToBounds="True">
+    <Border Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource StrokeBrush}"
+            BorderThickness="1" CornerRadius="16" ClipToBounds="True">
         <Border.RenderTransform>
             <TranslateTransform x:Name="WindowTranslate"/>
         </Border.RenderTransform>
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="92"/>
+                <RowDefinition Height="76"/>
                 <RowDefinition x:Name="ResultsRow" Height="0"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition x:Name="FooterRow" Height="0"/>
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0" Margin="22,0,18,0">
+            <!-- Search row -->
+            <Grid Grid.Row="0" Margin="18,0,14,0">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="42"/>
+                    <ColumnDefinition Width="36"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <Grid Width="28" Height="28" VerticalAlignment="Center" HorizontalAlignment="Left">
-                    <Ellipse Fill="{DynamicResource AccentSoftBrush}"/>
-                    <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15"
+                <Grid Width="24" Height="24" VerticalAlignment="Center" HorizontalAlignment="Left">
+                    <Border CornerRadius="7" Background="{DynamicResource AccentSoftBrush}"/>
+                    <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13"
                                Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Grid>
 
-                <Grid Grid.Column="1">
-                    <TextBlock x:Name="SearchHint" Text="搜索应用、文件，输入 = 计算，? 搜网页"
-                               Foreground="{DynamicResource FaintTextBrush}" FontSize="19.5" VerticalAlignment="Center"
+                <Grid Grid.Column="1" Margin="4,0,10,0">
+                    <TextBlock x:Name="SearchHint" Text="搜索应用、文件，= 计算，? 网页，> Shell"
+                               Foreground="{DynamicResource FaintTextBrush}" FontSize="18.5" VerticalAlignment="Center"
                                IsHitTestVisible="False"/>
                     <TextBox x:Name="SearchBox" Background="Transparent" BorderThickness="0"
                              Foreground="{DynamicResource TextBrush}" CaretBrush="{DynamicResource AccentBrush}"
-                             FontFamily="Segoe UI Variable Display, Microsoft YaHei UI, Segoe UI" FontSize="20.5" FontWeight="Normal"
+                             FontFamily="Segoe UI Variable Display, Microsoft YaHei UI, Segoe UI" FontSize="18.5"
                              VerticalContentAlignment="Center" Padding="0,2" Cursor="IBeam" TextChanged="SearchBox_TextChanged"
                              AutomationProperties.Name="Luma 搜索"/>
                 </Grid>
 
-                <Border Grid.Column="2" CornerRadius="6" Padding="9,5" VerticalAlignment="Center"
-                        Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
+                <Border Grid.Column="2" CornerRadius="999" Padding="10,5" VerticalAlignment="Center"
+                        Background="{DynamicResource SurfaceSubtleBrush}" Opacity="0.85">
                     <StackPanel Orientation="Horizontal">
-                        <Ellipse Width="5" Height="5" Fill="{DynamicResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,7,0"/>
                         <TextBlock x:Name="HotkeyText" Text="ALT  SPACE" FontFamily="Bahnschrift SemiCondensed, Segoe UI"
-                                   FontSize="11.5" Foreground="{DynamicResource MutedTextBrush}"/>
+                                   FontSize="11" Foreground="{DynamicResource MutedTextBrush}"/>
                     </StackPanel>
                 </Border>
             </Grid>
 
-            <Grid x:Name="ResultsHost" Grid.Row="1" Margin="12,0" Visibility="Collapsed">
+            <!-- Results -->
+            <Grid x:Name="ResultsHost" Grid.Row="1" Margin="8,0" Visibility="Collapsed">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <DockPanel Margin="8,2,8,4" LastChildFill="True">
-                    <Button x:Name="SortButton" DockPanel.Dock="Right" Content="排序 · 智能 ▾"
-                            Style="{StaticResource FilterButton}" Margin="4,0,0,0" VerticalAlignment="Top"
+                <DockPanel Margin="6,0,6,2" LastChildFill="True">
+                    <Button x:Name="SortButton" DockPanel.Dock="Right" Content="智能排序 ▾"
+                            Style="{StaticResource GhostFooterButton}" Margin="4,0,0,0" VerticalAlignment="Top"
                             AutomationProperties.Name="结果排序" Click="SortButton_Click"
-                            ToolTip="选择排序；名称、大小和修改时间由 Everything 全局召回，应用和工具随后。"/>
-                    <WrapPanel Orientation="Horizontal">
-                        <Button x:Name="AllFilterButton" Content="全部" Tag="All" Style="{StaticResource FilterButton}" Click="Filter_Click"/>
-                        <Button x:Name="AppFilterButton" Content="应用" Tag="Application" Style="{StaticResource FilterButton}" Click="Filter_Click"/>
-                        <Button x:Name="FileFilterButton" Content="文件" Tag="File" Style="{StaticResource FilterButton}" Click="Filter_Click"/>
-                        <Button x:Name="FolderFilterButton" Content="文件夹" Tag="Folder" Style="{StaticResource FilterButton}" Click="Filter_Click"/>
-                    </WrapPanel>
+                            ToolTip="选择排序；名称、大小和修改时间由 Everything 全局召回。"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="AllFilterButton" Content="全部" Tag="All" Style="{StaticResource ChipButton}" Click="Filter_Click"/>
+                        <Button x:Name="AppFilterButton" Content="应用" Tag="Application" Style="{StaticResource ChipButton}" Click="Filter_Click"/>
+                        <Button x:Name="FileFilterButton" Content="文件" Tag="File" Style="{StaticResource ChipButton}" Click="Filter_Click"/>
+                        <Button x:Name="FolderFilterButton" Content="文件夹" Tag="Folder" Style="{StaticResource ChipButton}" Click="Filter_Click"/>
+                    </StackPanel>
                 </DockPanel>
                 <Grid Grid.Row="1">
                     <Grid.ColumnDefinitions>
@@ -131,9 +135,21 @@
                     </Grid.ColumnDefinitions>
 
                     <Grid Grid.Column="0">
-                        <TextBlock x:Name="EmptyText" Text="没有找到匹配项" Foreground="{DynamicResource MutedTextBrush}"
-                                   FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        <ListBox x:Name="ResultsList" Background="Transparent" BorderThickness="0"
+                        <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center"
+                                    Visibility="Collapsed" Margin="0,20">
+                            <Border Width="40" Height="40" CornerRadius="12" Background="{DynamicResource SurfaceSubtleBrush}"
+                                    HorizontalAlignment="Center" Margin="0,0,0,10">
+                                <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons" FontSize="16"
+                                           Foreground="{DynamicResource FaintTextBrush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock x:Name="EmptyTitle" Text="没有找到匹配项" FontSize="14" FontWeight="Medium"
+                                       Foreground="{DynamicResource MutedTextBrush}" HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="EmptyHint" Text="试试 Everything 语法，或清除类型过滤"
+                                       FontSize="12" Margin="0,6,0,0"
+                                       Foreground="{DynamicResource FaintTextBrush}" HorizontalAlignment="Center"/>
+                        </StackPanel>
+                        <ListBox x:Name="ResultsList" Background="Transparent" BorderThickness="0" Margin="0,2,0,0"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
                                  ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True"
                                  VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel"
@@ -141,46 +157,63 @@
                                  PreviewMouseRightButtonDown="ResultsList_PreviewMouseRightButtonDown">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Height="50" Loaded="ResultItem_Loaded" DataContextChanged="ResultItem_DataContextChanged">
+                                    <Grid Loaded="ResultItem_Loaded" DataContextChanged="ResultItem_DataContextChanged"
+                                          Height="{Binding DataContext.ResultRowHeight, RelativeSource={RelativeSource AncestorType=Window}, FallbackValue=54}">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="42"/>
+                                            <ColumnDefinition Width="44"/>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <Grid Width="30" Height="30" VerticalAlignment="Center">
-                                            <Border CornerRadius="7" Background="{DynamicResource PanelHoverBrush}"/>
+                                        <Grid Width="34" Height="34" VerticalAlignment="Center">
+                                            <Border CornerRadius="8" Background="{DynamicResource SurfaceSubtleBrush}"/>
                                             <TextBlock Text="{Binding FallbackGlyph}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
                                                        FontSize="15" Foreground="{DynamicResource MutedTextBrush}"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             <Image Source="{Binding Icon}" Width="22" Height="22" Stretch="Uniform"/>
                                         </Grid>
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="2,0,12,0">
-                                            <TextBlock services:SearchHighlight.Text="{Binding Title}" FontSize="13.5" FontWeight="Medium"
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="2,0,10,0">
+                                            <TextBlock services:SearchHighlight.Text="{Binding Title}" FontSize="13.5" FontWeight="SemiBold"
                                                        Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis"/>
                                             <TextBlock services:SearchHighlight.Text="{Binding Subtitle}" FontSize="11.5" Margin="0,2,0,0"
                                                        Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis"/>
                                         </StackPanel>
-                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,4,0">
                                             <TextBlock Text="{Binding FavoriteGlyph}" Foreground="{DynamicResource AccentBrush}"
                                                        FontSize="11.5" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                            <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource StrokeBrush}"
-                                                    BorderThickness="1" CornerRadius="5" Padding="7,3">
+                                            <Border x:Name="SourceBadge" Background="{DynamicResource PanelBrush}"
+                                                    CornerRadius="5" Padding="7,3" Opacity="0.55">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding SourceLabel}" Value="APP">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding SourceLabel}" Value="FILE">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding SourceLabel}" Value="FOLDER">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
                                                 <TextBlock Text="{Binding SourceLabel}" FontFamily="Bahnschrift SemiCondensed, Segoe UI"
-                                                           Foreground="{DynamicResource FaintTextBrush}" FontSize="11.5"/>
+                                                           Foreground="{DynamicResource FaintTextBrush}" FontSize="10.5"/>
                                             </Border>
                                         </StackPanel>
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
-                        <Border x:Name="HistoryPanel" Visibility="Collapsed" Margin="0,8,0,0"
+                        <Border x:Name="HistoryPanel" Visibility="Collapsed" Margin="8,6,8,0"
                                 Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource StrokeBrush}"
-                                BorderThickness="1" CornerRadius="10" Padding="12,10">
+                                BorderThickness="1" CornerRadius="{DynamicResource RadiusMd}" Padding="12,10">
                             <DockPanel>
                                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="True">
-                                    <Button DockPanel.Dock="Right" Content="清空" Style="{StaticResource FilterButton}"
+                                    <Button DockPanel.Dock="Right" Content="清空" Style="{StaticResource GhostFooterButton}"
                                             Margin="6,0,0,0" Click="ClearHistoryPanel_Click"/>
-                                    <Button DockPanel.Dock="Right" Content="关闭" Style="{StaticResource FilterButton}"
+                                    <Button DockPanel.Dock="Right" Content="关闭" Style="{StaticResource GhostFooterButton}"
                                             Click="HistoryClose_Click"/>
                                     <TextBlock Text="搜索历史 · Ctrl+H" FontSize="12" FontWeight="SemiBold"
                                                Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center"/>
@@ -194,109 +227,124 @@
                         </Border>
                     </Grid>
 
-                    <Border x:Name="DetailsDivider" Grid.Column="1" Width="1" Margin="10,4"
+                    <Border x:Name="DetailsDivider" Grid.Column="1" Width="1" Margin="8,4"
                             Background="{DynamicResource StrokeBrush}" Visibility="Collapsed"/>
 
-                    <ScrollViewer x:Name="DetailsPane" Grid.Column="2" Visibility="Collapsed" Margin="2,4,8,8"
-                                  Padding="17,13,17,16" Background="{DynamicResource PanelBrush}"
-                                  BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1"
-                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <StackPanel>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="58"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid Width="48" Height="48" VerticalAlignment="Top">
-                                    <Border CornerRadius="11" Background="{DynamicResource PanelHoverBrush}"/>
-                                    <TextBlock Text="{Binding SelectedItem.FallbackGlyph, ElementName=ResultsList}"
-                                               FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="22"
-                                               Foreground="{DynamicResource MutedTextBrush}"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    <Image Source="{Binding SelectedItem.Icon, ElementName=ResultsList}"
-                                           Width="34" Height="34" Stretch="Uniform"/>
+                    <!-- Details / preview (Phase 3) -->
+                    <Border x:Name="DetailsPane" Grid.Column="2" Visibility="Collapsed" Margin="0,4,8,8"
+                            Padding="16,14,16,14" Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1"
+                            CornerRadius="{DynamicResource RadiusMd}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="52"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid Width="44" Height="44" VerticalAlignment="Top">
+                                        <Border CornerRadius="10" Background="{DynamicResource SurfaceSubtleBrush}"/>
+                                        <TextBlock Text="{Binding SelectedItem.FallbackGlyph, ElementName=ResultsList}"
+                                                   FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20"
+                                                   Foreground="{DynamicResource MutedTextBrush}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        <Image Source="{Binding SelectedItem.Icon, ElementName=ResultsList}"
+                                               Width="30" Height="30" Stretch="Uniform"/>
+                                    </Grid>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock services:SearchHighlight.Text="{Binding SelectedItem.Title, ElementName=ResultsList}"
+                                                   FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextBrush}"/>
+                                        <TextBlock x:Name="DetailKindText" Margin="0,4,0,0" FontSize="11"
+                                                   Foreground="{DynamicResource AccentBrush}"/>
+                                    </StackPanel>
                                 </Grid>
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <TextBlock services:SearchHighlight.Text="{Binding SelectedItem.Title, ElementName=ResultsList}"
-                                               FontFamily="Segoe UI Variable Display, Microsoft YaHei UI, Segoe UI"
-                                               FontSize="17" FontWeight="Medium" TextWrapping="Wrap"
-                                               Foreground="{DynamicResource TextBrush}"/>
-                                    <TextBlock x:Name="DetailKindText" Margin="0,5,0,0" FontSize="11.5"
-                                               FontFamily="Bahnschrift SemiCondensed, Segoe UI"
-                                               Foreground="{DynamicResource AccentBrush}"/>
+
+                                <Border x:Name="DetailPreviewHost" Margin="0,14,0,0" CornerRadius="{DynamicResource RadiusMd}"
+                                        Background="{DynamicResource SurfaceSubtleBrush}" Padding="8"
+                                        Visibility="Collapsed" MaxHeight="200">
+                                    <Image x:Name="DetailPreviewImage" Stretch="Uniform" MaxHeight="184"
+                                           HorizontalAlignment="Center"/>
+                                </Border>
+
+                                <Border x:Name="DetailSkeleton" Margin="0,14,0,0" Height="88"
+                                        CornerRadius="{DynamicResource RadiusMd}"
+                                        Background="{DynamicResource SurfaceSubtleBrush}"
+                                        Visibility="Collapsed" Opacity="0.7"/>
+
+                                <Grid Margin="0,16,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="大小" FontSize="11" Foreground="{DynamicResource FaintTextBrush}"/>
+                                        <TextBlock x:Name="DetailSizeText" Margin="0,3,8,0" FontSize="12"
+                                                   Foreground="{DynamicResource MutedTextBrush}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="修改时间" FontSize="11" Foreground="{DynamicResource FaintTextBrush}"/>
+                                        <TextBlock x:Name="DetailModifiedText" Margin="0,3,0,0" FontSize="12"
+                                                   Foreground="{DynamicResource MutedTextBrush}"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <TextBlock Text="位置" FontSize="11" Foreground="{DynamicResource FaintTextBrush}" Margin="0,14,0,4"/>
+                                <TextBlock x:Name="DetailLocationText" FontSize="11.5" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,10"/>
+
+                                <TextBlock x:Name="DetailDescriptionText" FontSize="11.5" LineHeight="17"
+                                           Foreground="{DynamicResource FaintTextBrush}" TextWrapping="Wrap"
+                                           Margin="0,0,0,14"/>
+
+                                <StackPanel Orientation="Horizontal" x:Name="DetailActionsPanel">
+                                    <Button x:Name="DetailOpenButton" Content="打开" Style="{StaticResource AccentButton}"
+                                            Click="DetailOpen_Click"/>
+                                    <Button x:Name="DetailRevealButton" Content="定位" Style="{StaticResource DetailActionButton}"
+                                            Click="DetailReveal_Click"/>
+                                    <Button x:Name="DetailCopyButton" Content="复制" Style="{StaticResource DetailActionButton}"
+                                            Click="DetailCopy_Click"/>
+                                    <Button x:Name="DetailFavoriteButton" Content="收藏" Style="{StaticResource DetailActionButton}"
+                                            Click="DetailFavorite_Click"/>
+                                    <Button x:Name="DetailQuickSwitchButton" Content="切换" Style="{StaticResource DetailActionButton}"
+                                            Click="DetailQuickSwitch_Click" Visibility="Collapsed"/>
+                                    <Button x:Name="DetailAdminButton" Content="管理员" Style="{StaticResource DetailActionButton}"
+                                            Click="DetailAdmin_Click" Visibility="Collapsed"/>
                                 </StackPanel>
-                            </Grid>
-
-                            <Border Height="1" Margin="0,18,0,17" Background="{DynamicResource StrokeBrush}"/>
-
-                            <Image x:Name="DetailPreviewImage" MaxHeight="160" Margin="0,0,0,14"
-                                   Stretch="Uniform" Visibility="Collapsed"
-                                   HorizontalAlignment="Center"/>
-
-                            <TextBlock Text="位置" FontSize="11.5" Foreground="{DynamicResource FaintTextBrush}"/>
-                            <Border Margin="0,6,0,16" Padding="10,8" CornerRadius="7"
-                                    Background="{DynamicResource PanelHoverBrush}" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
-                                <TextBlock x:Name="DetailLocationText" FontSize="11.5"
-                                           Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap"/>
-                            </Border>
-
-                            <Grid Margin="0,0,0,15">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel>
-                                    <TextBlock Text="大小" FontSize="11.5" Foreground="{DynamicResource FaintTextBrush}"/>
-                                    <TextBlock x:Name="DetailSizeText" Margin="0,5,10,0" FontSize="12"/>
-                                </StackPanel>
-                                <StackPanel Grid.Column="1">
-                                    <TextBlock Text="修改时间" FontSize="11.5" Foreground="{DynamicResource FaintTextBrush}"/>
-                                    <TextBlock x:Name="DetailModifiedText" Margin="0,5,0,0" FontSize="12"/>
-                                </StackPanel>
-                            </Grid>
-
-                            <TextBlock x:Name="DetailDescriptionText" FontSize="11.5" LineHeight="18"
-                                       Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap"/>
-
-                            <TextBlock Text="操作" Margin="0,23,0,10" FontSize="11.5"
-                                       FontFamily="Bahnschrift SemiCondensed, Segoe UI"
-                                       Foreground="{DynamicResource AccentBrush}"/>
-                            <WrapPanel x:Name="DetailActionsPanel">
-                                <Button x:Name="DetailOpenButton" Content="打开" Style="{StaticResource DetailActionButton}"
-                                        Background="{DynamicResource AccentSoftBrush}" BorderBrush="{DynamicResource AccentBrush}"
-                                        Click="DetailOpen_Click"/>
-                                <Button x:Name="DetailRevealButton" Content="定位" Style="{StaticResource DetailActionButton}"
-                                        Click="DetailReveal_Click"/>
-                                <Button x:Name="DetailCopyButton" Content="复制路径" Style="{StaticResource DetailActionButton}"
-                                        Click="DetailCopy_Click"/>
-                                <Button x:Name="DetailFavoriteButton" Content="收藏" Style="{StaticResource DetailActionButton}"
-                                        Click="DetailFavorite_Click"/>
-                                <Button x:Name="DetailQuickSwitchButton" Content="快速切换" Style="{StaticResource DetailActionButton}"
-                                        Click="DetailQuickSwitch_Click"/>
-                                <Button x:Name="DetailAdminButton" Content="管理员运行" Style="{StaticResource DetailActionButton}"
-                                        Click="DetailAdmin_Click"/>
-                            </WrapPanel>
-                        </StackPanel>
-                    </ScrollViewer>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
                 </Grid>
             </Grid>
 
-            <Border x:Name="Footer" Grid.Row="2" Visibility="Collapsed" BorderBrush="{DynamicResource StrokeBrush}"
+            <!-- Thin loading bar (Phase 5) -->
+            <Grid Grid.Row="2" Height="2" x:Name="ProgressHost" Visibility="Collapsed">
+                <Border Background="{DynamicResource SurfaceSubtleBrush}" CornerRadius="1"/>
+                <Border x:Name="ProgressPulse" Background="{DynamicResource AccentBrush}" CornerRadius="1"
+                        HorizontalAlignment="Left" Width="80" Opacity="0.85"/>
+            </Grid>
+
+            <!-- Footer -->
+            <Border x:Name="Footer" Grid.Row="3" Visibility="Collapsed" BorderBrush="{DynamicResource StrokeBrush}"
                     BorderThickness="0,1,0,0" Background="{DynamicResource PanelBrush}">
-                <Grid Margin="18,0">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Grid Margin="16,0" Height="36">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
                     <TextBlock x:Name="StatusText" AutomationProperties.LiveSetting="Polite" VerticalAlignment="Center" FontSize="11.5"
-                               Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                               Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"
+                               ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <TextBlock Text="↵ 打开" FontSize="11.5" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,15,0"/>
-                        <TextBlock Text="⌃↵ 定位" FontSize="11.5" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,15,0"/>
-                        <TextBlock Text="⌃H 历史" FontSize="11.5" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,15,0"/>
-                        <TextBlock x:Name="QuickSwitchHint" Text="⌃G 快速切换" FontSize="11.5"
-                                   Foreground="{DynamicResource AccentBrush}" Margin="0,0,15,0" Visibility="Collapsed"/>
-                        <Button x:Name="MoreButton" Content="展开结果" Style="{StaticResource FilterButton}"
-                                Margin="0" Click="MoreButton_Click" Visibility="Collapsed"/>
-                        <Button x:Name="LoadMoreButton" Content="加载更多" Style="{StaticResource FilterButton}"
-                                Margin="6,0,0,0" Click="LoadMore_Click" Visibility="Collapsed"/>
+                        <TextBlock Text="↵ 打开" FontSize="11" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,12,0"/>
+                        <TextBlock Text="⌃↵ 定位" FontSize="11" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,12,0"/>
+                        <TextBlock Text="⌃H 历史" FontSize="11" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,12,0"/>
+                        <TextBlock x:Name="QuickSwitchHint" Text="⌃G 切换" FontSize="11"
+                                   Foreground="{DynamicResource AccentBrush}" Margin="0,0,12,0" Visibility="Collapsed"/>
+                        <Button x:Name="MoreButton" Content="展开" Style="{StaticResource GhostFooterButton}"
+                                Click="MoreButton_Click" Visibility="Collapsed"/>
+                        <Button x:Name="LoadMoreButton" Content="加载更多" Style="{StaticResource GhostFooterButton}"
+                                Margin="4,0,0,0" Click="LoadMore_Click" Visibility="Collapsed"/>
                     </StackPanel>
                 </Grid>
             </Border>

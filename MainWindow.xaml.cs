@@ -12,7 +12,7 @@ namespace LumaLauncher;
 
 public sealed partial class MainWindow : Window
 {
-    private const double CompactHeight = 94;
+    private const double CompactHeight = 76;
     private const double ExpandedHeight = 600;
     private const double CompactWidth = 700;
     private const double FullResultsWidth = 1040;
@@ -52,6 +52,11 @@ public sealed partial class MainWindow : Window
     private bool _composing;
     private bool _historyPanelOpen;
     private readonly System.Diagnostics.Stopwatch _queryTimer = new();
+    private System.Windows.Threading.DispatcherTimer? _progressTimer;
+    private DateTimeOffset _toastUntil;
+
+    /// <summary>Bound from the result item template; density-aware row height.</summary>
+    public double ResultRowHeight => _settings.Current.Density == "Compact" ? 46 : 54;
 
     internal Func<int, IntPtr, IntPtr, bool>? TrayMessageHandler { get; set; }
     public GameModeService GameMode => _controller.GameMode;
@@ -103,6 +108,7 @@ public sealed partial class MainWindow : Window
         var foldersChanged = _search.Configure(_settings.Current);
         _controller.ApplySettings(_settings.Current);
         UpdateSortButton();
+        UpdateFilterButtons();
         if (sortChanged)
         {
             _completedQuery = null;
@@ -301,11 +307,11 @@ public sealed partial class MainWindow : Window
                 _allResults.Clear();
                 _results.Clear();
                 MoreButton.Visibility = Visibility.Collapsed;
-                EmptyText.Text = "正在搜索…";
-                EmptyText.Visibility = Visibility.Visible;
+                ShowEmptyState(true, "正在搜索…", "可按 Enter 立即提交");
                 ResultsList.Visibility = Visibility.Collapsed;
             }
-            StatusText.Text = keepExistingResults ? "正在加载更多结果…" : "Everything + 应用";
+            StatusText.Text = keepExistingResults ? "正在加载更多结果…" : "综合搜索";
+            SetProgressVisible(!keepExistingResults);
 
             var resultLimit = _fullResultsMode ? _fullResultLimit : QuickSearchResultLimit;
             var publishedPartial = false;
@@ -320,22 +326,27 @@ public sealed partial class MainWindow : Window
             if (generation != _searchGeneration || !pendingQuery.Equals(SearchBox.Text.Trim(), StringComparison.Ordinal))
                 return false;
             if (token.IsCancellationRequested) return false;
+            SetProgressVisible(false);
             _completedQuery = batch.EverythingAvailable ? pendingQuery : null;
             ApplyBatch(batch, "没有找到匹配项", preserveResults || publishedPartial);
             return true;
         }
-        catch (OperationCanceledException) { return false; }
+        catch (OperationCanceledException) { SetProgressVisible(false); return false; }
         catch (Exception exception) when (generation == _searchGeneration)
         {
             DiagnosticsService.Log("search", exception);
             ApplyBatch(new SearchBatch([], "搜索暂时不可用", false), "搜索暂时不可用，请稍后重试");
+            SetProgressVisible(false);
             SetExpanded(0, showBody: true);
             return false;
         }
         finally
         {
             if (generation == _searchGeneration)
+            {
+                SetProgressVisible(false);
                 SetSearchPending(false);
+            }
         }
     }
 
@@ -399,19 +410,69 @@ public sealed partial class MainWindow : Window
         foreach (var result in visibleResults)
             _results.Add(result);
         ResultsList.SelectedIndex = _results.Count > 0 ? 0 : -1;
-        EmptyText.Text = emptyMessage;
-        EmptyText.Visibility = _results.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ShowEmptyState(_results.Count == 0, emptyMessage,
+            _activeFilter != "All" ? "可点上方筛选切回「全部」" : "试试 Everything 语法或更短的关键词");
         ResultsList.Visibility = _results.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-        StatusText.Text = filtered.Count == 0 ? _batchStatus : $"{filtered.Count} 个结果 · {_batchStatus}";
         UpdateSortButton();
         MoreButton.Visibility = _fullResultsMode || filtered.Count > 0 || _hasMore
             ? Visibility.Visible
             : Visibility.Collapsed;
-        MoreButton.Content = _fullResultsMode ? "收起" : "展开结果";
+        MoreButton.Content = _fullResultsMode ? "收起" : "展开";
         LoadMoreButton.Visibility = _fullResultsMode && _hasMore ? Visibility.Visible : Visibility.Collapsed;
-        StatusText.Text = $"已加载 {filtered.Count} 项{(_fileMatchCount is > 0 ? $" · 文件匹配 ≥ {_fileMatchCount}" : "")}{(_hasMore ? " · 可继续加载" : "")} · {_batchStatus}";
+        StatusText.Text = filtered.Count == 0
+            ? _batchStatus
+            : $"{filtered.Count} 个结果{(_fileMatchCount is > 0 ? $" · 文件 ≥ {_fileMatchCount}" : "")}{(_hasMore ? " · 可继续加载" : "")} · {_batchStatus}";
         UpdateFilterButtons();
         SetExpanded(_results.Count, _allResults.Count > 0 || SearchBox.Text.Length > 0);
+        FadeResultsIn();
+    }
+
+    private void ShowEmptyState(bool show, string title, string hint)
+    {
+        EmptyState.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (!show)
+            return;
+        EmptyTitle.Text = title;
+        EmptyHint.Text = hint;
+    }
+
+    private void SetProgressVisible(bool visible)
+    {
+        if (ProgressHost is null)
+            return;
+        ProgressHost.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        if (!visible)
+        {
+            _progressTimer?.Stop();
+            return;
+        }
+        _progressTimer ??= new System.Windows.Threading.DispatcherTimer(
+            TimeSpan.FromMilliseconds(16), System.Windows.Threading.DispatcherPriority.Background,
+            (_, _) =>
+            {
+                if (ProgressPulse is null)
+                    return;
+                var x = ProgressPulse.Margin.Left + 6;
+                var max = Math.Max(0, ProgressHost.ActualWidth - ProgressPulse.Width);
+                if (x > max)
+                    x = -ProgressPulse.Width;
+                ProgressPulse.Margin = new Thickness(x, 0, 0, 0);
+            }, Dispatcher);
+        ProgressPulse.Margin = new Thickness(0, 0, 0, 0);
+        _progressTimer.Start();
+    }
+
+    private void FadeResultsIn()
+    {
+        if (!SystemParameters.ClientAreaAnimation || ResultsList is null)
+            return;
+        ResultsList.BeginAnimation(OpacityProperty, new DoubleAnimation(0.55, 1, TimeSpan.FromMilliseconds(90)));
+    }
+
+    private void ShowToast(string message)
+    {
+        StatusText.Text = message;
+        _toastUntil = DateTimeOffset.UtcNow.AddMilliseconds(1200);
     }
 
     private bool MatchesActiveFilter(LauncherResult result) => _activeFilter switch
@@ -427,8 +488,9 @@ public sealed partial class MainWindow : Window
         foreach (var button in new[] { AllFilterButton, AppFilterButton, FileFilterButton, FolderFilterButton })
         {
             var selected = string.Equals(button.Tag as string, _activeFilter, StringComparison.Ordinal);
-            button.SetResourceReference(BackgroundProperty, selected ? "AccentSoftBrush" : "PanelHoverBrush");
-            button.SetResourceReference(BorderBrushProperty, selected ? "AccentBrush" : "StrokeBrush");
+            button.SetResourceReference(BackgroundProperty, selected ? "AccentSoftBrush" : "SurfaceSubtleBrush");
+            button.SetResourceReference(ForegroundProperty, selected ? "AccentBrush" : "MutedTextBrush");
+            button.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
         }
     }
 
@@ -458,14 +520,15 @@ public sealed partial class MainWindow : Window
     private void SetExpanded(int resultCount, bool showBody)
     {
         ResultsRow.Height = new GridLength(showBody ? 1 : 0, showBody ? GridUnitType.Star : GridUnitType.Pixel);
-        FooterRow.Height = new GridLength(showBody ? 38 : 0);
+        FooterRow.Height = new GridLength(showBody ? 36 : 0);
         ResultsHost.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
         Footer.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
-        var resultArea = 36 + (resultCount > 0 ? Math.Min(PageSize, resultCount) * 52 + 8 : 72);
+        var row = ResultRowHeight + 2;
+        var resultArea = 34 + (resultCount > 0 ? Math.Min(PageSize, resultCount) * row + 8 : 64);
         var available = GetFullResultsSize();
         var targetHeight = _fullResultsMode
             ? available.Height
-            : showBody ? Math.Min(available.Height, Math.Min(ExpandedHeight, CompactHeight + resultArea + 38)) : CompactHeight;
+            : showBody ? Math.Min(available.Height, Math.Min(ExpandedHeight, CompactHeight + resultArea + 36)) : CompactHeight;
         var targetWidth = _fullResultsMode ? available.Width : Math.Min(CompactWidth, available.Width);
         if (_fullResultsMode)
         {
@@ -802,7 +865,7 @@ public sealed partial class MainWindow : Window
             !SearchBox.IsKeyboardFocusWithin && ResultsList.SelectedItem is LauncherResult copyResult)
         {
             ResultExecutionService.CopyPath(copyResult);
-            StatusText.Text = "已复制路径";
+            ShowToast("已复制路径");
             e.Handled = true;
             return;
         }
@@ -1021,12 +1084,15 @@ public sealed partial class MainWindow : Window
                 bitmap.EndInit();
                 DetailPreviewImage.Source = bitmap;
                 DetailPreviewImage.Visibility = Visibility.Visible;
+                DetailPreviewHost.Visibility = Visibility.Visible;
             }
             else
             {
                 DetailPreviewImage.Source = null;
                 DetailPreviewImage.Visibility = Visibility.Collapsed;
+                DetailPreviewHost.Visibility = Visibility.Collapsed;
             }
+            DetailSkeleton.Visibility = Visibility.Collapsed;
         }
         catch (Exception exception)
         {
@@ -1090,6 +1156,11 @@ public sealed partial class MainWindow : Window
         DetailSizeText.Text = "正在读取…";
         DetailModifiedText.Text = "正在读取…";
         DetailDescriptionText.Text = selected.Subtitle;
+        DetailPreviewHost.Visibility = Visibility.Collapsed;
+        if (_settings.Current.EnablePreview && selected.IsFileSystemItem)
+            DetailSkeleton.Visibility = Visibility.Visible;
+        else
+            DetailSkeleton.Visibility = Visibility.Collapsed;
 
         try
         {
@@ -1140,6 +1211,9 @@ public sealed partial class MainWindow : Window
         DetailModifiedText.Text = "—";
         DetailDescriptionText.Text = "选择左侧结果以查看详细信息。";
         DetailActionsPanel.Visibility = Visibility.Collapsed;
+        DetailPreviewHost.Visibility = Visibility.Collapsed;
+        DetailSkeleton.Visibility = Visibility.Collapsed;
+        DetailPreviewImage.Source = null;
     }
 
     private void DetailOpen_Click(object sender, RoutedEventArgs e) => OpenSelected(false);
@@ -1151,7 +1225,7 @@ public sealed partial class MainWindow : Window
         if (ResultsList.SelectedItem is not LauncherResult selected)
             return;
         ResultExecutionService.CopyPath(selected);
-        StatusText.Text = selected.Kind == LauncherResultKind.Calculation ? "已复制结果" : "已复制路径";
+        ShowToast(selected.Kind == LauncherResultKind.Calculation ? "已复制结果" : "已复制路径");
     }
 
     private void DetailFavorite_Click(object sender, RoutedEventArgs e)

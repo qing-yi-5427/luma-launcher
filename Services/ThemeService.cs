@@ -35,6 +35,32 @@ public static class ThemeService
         string Text, string Muted, string Faint, string Stroke,
         string Accent, string AccentSoft);
 
+    private static string SubtleOf(string hover) => hover;
+    private static string ElevatedOf(string selected) => selected;
+
+    private static void ApplyPalette(Palette palette)
+    {
+        Set("WindowBrush", palette.Window);
+        Set("PanelBrush", palette.Panel);
+        Set("PanelHoverBrush", palette.Hover);
+        Set("PanelSelectedBrush", palette.Selected);
+        Set("TextBrush", palette.Text);
+        Set("MutedTextBrush", palette.Muted);
+        Set("FaintTextBrush", palette.Faint);
+        Set("StrokeBrush", palette.Stroke);
+        Set("AccentBrush", palette.Accent);
+        Set("AccentSoftBrush", palette.AccentSoft);
+        Set("SurfaceSubtleBrush", palette.Hover);
+        Set("SurfaceElevatedBrush", palette.Selected);
+        // Danger / success stay constant enough across curated palettes.
+        var light = !IsDarkPalette(palette);
+        Set("DangerBrush", light ? "#FFB42318" : "#FFF07178");
+        Set("SuccessBrush", light ? "#FF0F7B3D" : "#FF7FD99A");
+    }
+
+    private static bool IsDarkPalette(Palette palette) =>
+        ReferenceEquals(palette, InkTealPalette) || ReferenceEquals(palette, DuskPalette);
+
     // ── 夜间 01 · 墨青 InkTeal ──────────────────────────────────────────
     // Cool midnight blue-black + mint-teal accent. Focus, calm, technical.
     private static readonly Palette InkTealPalette = new(
@@ -144,24 +170,17 @@ public static class ThemeService
                 System.Windows.Application.Current.Resources[key] = System.Windows.SystemColors.WindowBrush;
             foreach (var key in new[] { "TextBrush", "MutedTextBrush", "FaintTextBrush", "StrokeBrush", "AccentBrush" })
                 System.Windows.Application.Current.Resources[key] = System.Windows.SystemColors.WindowTextBrush;
-            System.Windows.Application.Current.Resources["PanelSelectedBrush"] = System.Windows.SystemColors.ControlBrush;
+            foreach (var key in new[] { "PanelSelectedBrush", "SurfaceSubtleBrush", "SurfaceElevatedBrush" })
+                System.Windows.Application.Current.Resources[key] = System.Windows.SystemColors.ControlBrush;
             System.Windows.Application.Current.Resources["AccentSoftBrush"] = System.Windows.SystemColors.ControlBrush;
+            System.Windows.Application.Current.Resources["DangerBrush"] = System.Windows.SystemColors.WindowTextBrush;
+            System.Windows.Application.Current.Resources["SuccessBrush"] = System.Windows.SystemColors.WindowTextBrush;
             return;
         }
 
         var effective = ResolveEffectiveTheme(_requestedTheme);
         var palette = Palettes.GetValueOrDefault(effective, InkTealPalette);
-
-        Set("WindowBrush", palette.Window);
-        Set("PanelBrush", palette.Panel);
-        Set("PanelHoverBrush", palette.Hover);
-        Set("PanelSelectedBrush", palette.Selected);
-        Set("TextBrush", palette.Text);
-        Set("MutedTextBrush", palette.Muted);
-        Set("FaintTextBrush", palette.Faint);
-        Set("StrokeBrush", palette.Stroke);
-        Set("AccentBrush", palette.Accent);
-        Set("AccentSoftBrush", palette.AccentSoft);
+        ApplyPalette(palette);
     }
 
     private static bool IsAuto(string theme) =>

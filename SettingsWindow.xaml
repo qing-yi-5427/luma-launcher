@@ -213,28 +213,12 @@
                         <!-- 常规 -->
                         <StackPanel x:Name="SectionGeneral">
                             <TextBlock Text="唤醒快捷键" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,0,0,7"/>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBox x:Name="HotkeyBox" AutomationProperties.Name="全局快捷键"
-                                         IsReadOnly="True" Cursor="Hand" CaretBrush="{x:Null}"
-                                         PreviewKeyDown="HotkeyBox_PreviewKeyDown"
-                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
-                                         LostKeyboardFocus="HotkeyBox_LostKeyboardFocus"
-                                         ToolTip="点击后直接按下快捷键组合；Esc 取消"/>
-                                <ComboBox Grid.Column="1" x:Name="HotkeyPresetBox" Width="120" Margin="8,0,0,0"
-                                          AutomationProperties.Name="快捷键预设" SelectionChanged="HotkeyPreset_SelectionChanged">
-                                    <ComboBoxItem Content="预设…" Tag=""/>
-                                    <ComboBoxItem Content="Alt + Space" Tag="Alt+Space"/>
-                                    <ComboBoxItem Content="Ctrl + Space" Tag="Ctrl+Space"/>
-                                    <ComboBoxItem Content="Ctrl + Alt + Space" Tag="Ctrl+Alt+Space"/>
-                                    <ComboBoxItem Content="Ctrl + Shift + Space" Tag="Ctrl+Shift+Space"/>
-                                    <ComboBoxItem Content="Alt + E" Tag="Alt+E"/>
-                                    <ComboBoxItem Content="Ctrl + Shift + F12" Tag="Ctrl+Shift+F12"/>
-                                </ComboBox>
-                            </Grid>
+                            <TextBox x:Name="HotkeyBox" AutomationProperties.Name="全局快捷键"
+                                     IsReadOnly="True" Cursor="Hand" CaretBrush="{x:Null}"
+                                     PreviewKeyDown="HotkeyBox_PreviewKeyDown"
+                                     GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
+                                     LostKeyboardFocus="HotkeyBox_LostKeyboardFocus"
+                                     ToolTip="点击后直接按下快捷键组合；Esc 取消"/>
                             <TextBlock x:Name="HotkeyCaptureHint" Text="点击输入框后，直接按下你要用的组合键。Esc 取消。"
                                        Foreground="{DynamicResource FaintTextBrush}" FontSize="11.5" Margin="2,5,0,0"/>
 

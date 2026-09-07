@@ -310,12 +310,6 @@ public sealed partial class SettingsWindow : Window
         catch (Exception exception) { PrivacyStatusText.Text = "清空失败：" + exception.Message; }
     }
 
-    private void HotkeyPreset_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-    {
-        if (HotkeyPresetBox?.SelectedValue is string preset && preset.Length > 0 && HotkeyBox is not null)
-            HotkeyBox.Text = preset;
-    }
-
     private string _hotkeyBeforeCapture = "Alt+Space";
     private bool _capturingHotkey;
 

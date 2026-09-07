@@ -203,6 +203,7 @@ public sealed partial class MainWindow : Window
         _searchCancellation?.Cancel();
         if (HelpOverlay is not null)
             HelpOverlay.Visibility = Visibility.Collapsed;
+        _helpOpen = false;
         if (_fullResultsMode)
             LeaveFullResultsMode(animate: false);
         Hide();
@@ -782,7 +783,7 @@ public sealed partial class MainWindow : Window
         {
             if (HelpOverlay?.Visibility == Visibility.Visible)
             {
-                HelpOverlay.Visibility = Visibility.Collapsed;
+                CloseHelp();
                 e.Handled = true;
                 return;
             }
@@ -1270,22 +1271,47 @@ public sealed partial class MainWindow : Window
             HideLauncher();
     }
 
-    private void ToggleHelpOverlay()
+    private bool _helpOpen;
+
+    private void OpenHelp()
     {
         if (HelpOverlay is null)
             return;
         HelpTitleText.Text = UiStrings.Get("HelpTitle");
-        HelpOverlay.Visibility = HelpOverlay.Visibility == Visibility.Visible
-            ? Visibility.Collapsed
-            : Visibility.Visible;
+        HelpOverlay.Visibility = Visibility.Visible;
+        _helpOpen = true;
+        BeginAnimation(WidthProperty, null);
+        BeginAnimation(HeightProperty, null);
+        var available = GetFullResultsSize();
+        Width = Math.Min(720, available.Width);
+        Height = Math.Min(420, available.Height);
+        PositionOnCursorMonitor();
+        SearchBox.Focus();
     }
 
-    public void ShowHelpOnce() => ToggleHelpOverlay();
+    private void CloseHelp()
+    {
+        if (HelpOverlay is null)
+            return;
+        HelpOverlay.Visibility = Visibility.Collapsed;
+        _helpOpen = false;
+        // Restore the normal compact / results chrome size.
+        SetExpanded(_results.Count, _allResults.Count > 0 || SearchBox.Text.Length > 0);
+    }
+
+    private void ToggleHelpOverlay()
+    {
+        if (_helpOpen)
+            CloseHelp();
+        else
+            OpenHelp();
+    }
+
+    public void ShowHelpOnce() => OpenHelp();
 
     private void HelpOverlay_Click(object sender, MouseButtonEventArgs e)
     {
-        if (HelpOverlay is not null)
-            HelpOverlay.Visibility = Visibility.Collapsed;
+        CloseHelp();
         e.Handled = true;
     }
 

@@ -4,6 +4,7 @@ on:
     branches: [main, mimo]
     tags: ['v*']
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -22,7 +23,8 @@ jobs:
         run: |
           $files = @(Get-ChildItem publish/win-x64 -File)
           if ($files.Count -ne 1 -or $files[0].Name -ne 'Luma.exe') { throw 'Unexpected release contents' }
-          Get-FileHash publish/win-x64/Luma.exe -Algorithm SHA256
+          $hash = (Get-FileHash publish/win-x64/Luma.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path publish/win-x64/Luma.exe.sha256 -Value "$hash  Luma.exe" -Encoding ascii -NoNewline
       - name: Performance gate (relative to baseline)
         shell: pwsh
         run: |
@@ -31,8 +33,62 @@ jobs:
           $size = (Get-Item publish/win-x64/Luma.exe).Length
           Write-Host "Artifact bytes: $size"
           if ($size -gt 100MB) { throw "Single-file artifact exceeded 100MB hard ceiling" }
-          # Smoke-test path already logs input_to_results_ms; this job asserts packaging hygiene.
+          # This job asserts packaging hygiene; see docs/PERFORMANCE.md for measured latency.
       - uses: actions/upload-artifact@v4
         with:
           name: Luma-win-x64
-          path: publish/win-x64/Luma.exe
+          if-no-files-found: error
+          path: |
+            publish/win-x64/Luma.exe
+            publish/win-x64/Luma.exe.sha256
+
+  branch-release:
+    name: Publish branch pre-release
+    needs: windows
+    # PRs and version tags never publish a branch build. No untrusted PR code
+    # runs in this write-enabled job; it only downloads the validated artifact.
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mimo')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Luma-win-x64
+          path: release
+      - name: Verify and publish exact tested artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          (cd release && sha256sum --check Luma.exe.sha256)
+          short_sha="${COMMIT_SHA:0:7}"
+          tag="build-${BRANCH}-${BUILD_NUMBER}-${short_sha}"
+          title="Luma ${BRANCH} — build ${BUILD_NUMBER} (${short_sha})"
+          printf '%s\n' \
+            "Automated Windows x64 single-file build from branch \`${BRANCH}\`." \
+            "" \
+            "Commit: ${COMMIT_SHA}" \
+            "Build and tests: ${RUN_URL}" \
+            "" \
+            "Download Luma.exe and Luma.exe.sha256 below. No separate .NET installation is required." \
+            "This is a development pre-release, not a stable release; it does not replace Latest." \
+            "The executable retains the version declared in Launcher.csproj. Back up settings before testing." \
+            "SHA-256 verifies download integrity, not a code-signing identity." > notes.md
+          if gh release view "$tag" >/dev/null 2>&1; then
+            # A rerun updates only this run's assets, never a moving branch tag.
+            gh release upload "$tag" release/Luma.exe release/Luma.exe.sha256 --clobber
+          else
+            gh release create "$tag" release/Luma.exe release/Luma.exe.sha256 \
+              --target "$COMMIT_SHA" --title "$title" --notes-file notes.md \
+              --prerelease --latest=false
+          fi
+          echo "Release: https://github.com/${GH_REPO}/releases/tag/${tag}" >> "$GITHUB_STEP_SUMMARY"

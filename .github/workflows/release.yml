@@ -20,7 +20,7 @@ jobs:
         run: |
           $exe = "publish/win-x64/Luma.exe"
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          Set-Content -Path "publish/win-x64/Luma.exe.sha256" -Value "$hash  Luma.exe" -NoNewline
+          Set-Content -Path "publish/win-x64/Luma.exe.sha256" -Value "$hash  Luma.exe" -Encoding ascii -NoNewline
           Write-Host "SHA256=$hash"
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -29,6 +29,9 @@ jobs:
             publish/win-x64/Luma.exe
             publish/win-x64/Luma.exe.sha256
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'true' }}
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

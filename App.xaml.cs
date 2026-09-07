@@ -29,6 +29,7 @@ public sealed partial class App : System.Windows.Application
         _settingsStore = new SettingsStore();
         if (_settingsStore.CompatibilityWarning is { } warning)
             MessageBox.Show(warning, "Luma · 配置版本不兼容", MessageBoxButton.OK, MessageBoxImage.Warning);
+        ThemeService.ConfigureAutoPair(_settingsStore.Current.DayTheme, _settingsStore.Current.NightTheme);
         ThemeService.Apply(_settingsStore.Current.Theme);
         ThemeService.StartFollowingSystem();
         _launcherWindow = new MainWindow(_settingsStore);
@@ -96,6 +97,7 @@ public sealed partial class App : System.Windows.Application
             return;
         _settingsStore.Save(settings);
         StartupService.Apply(settings.StartWithWindows);
+        ThemeService.ConfigureAutoPair(settings.DayTheme, settings.NightTheme);
         ThemeService.Apply(settings.Theme);
         _launcherWindow.ApplySettings();
     }

@@ -44,16 +44,16 @@
                 <Border BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="6" Margin="2"/>
             </ControlTemplate></Setter.Value></Setter>
         </Style>
-        <SolidColorBrush x:Key="WindowBrush" Color="#F3121519"/>
-        <SolidColorBrush x:Key="PanelBrush" Color="#FF1A1E23"/>
-        <SolidColorBrush x:Key="PanelHoverBrush" Color="#FF22272D"/>
-        <SolidColorBrush x:Key="PanelSelectedBrush" Color="#FF282C2D"/>
-        <SolidColorBrush x:Key="TextBrush" Color="#FFF4F1EA"/>
-        <SolidColorBrush x:Key="MutedTextBrush" Color="#FF969A9E"/>
-        <SolidColorBrush x:Key="FaintTextBrush" Color="#FF656A70"/>
-        <SolidColorBrush x:Key="StrokeBrush" Color="#FF30353B"/>
-        <SolidColorBrush x:Key="AccentBrush" Color="#FFE9A84C"/>
-        <SolidColorBrush x:Key="AccentSoftBrush" Color="#2EE9A84C"/>
+        <SolidColorBrush x:Key="WindowBrush" Color="#0D1218"/>
+        <SolidColorBrush x:Key="PanelBrush" Color="#141B23"/>
+        <SolidColorBrush x:Key="PanelHoverBrush" Color="#1C2632"/>
+        <SolidColorBrush x:Key="PanelSelectedBrush" Color="#243444"/>
+        <SolidColorBrush x:Key="TextBrush" Color="#E6EEF5"/>
+        <SolidColorBrush x:Key="MutedTextBrush" Color="#8A9AAB"/>
+        <SolidColorBrush x:Key="FaintTextBrush" Color="#5A6B7C"/>
+        <SolidColorBrush x:Key="StrokeBrush" Color="#2A3644"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="#3FD9B8"/>
+        <SolidColorBrush x:Key="AccentSoftBrush" Color="#333FD9B8"/>
 
         <Style x:Key="QuietButton" TargetType="Button">
             <Setter Property="FontSize" Value="12"/>

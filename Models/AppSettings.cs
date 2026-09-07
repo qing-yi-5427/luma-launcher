@@ -5,7 +5,9 @@ public sealed class AppSettings
     public int SchemaVersion { get; set; } = 2;
     public bool RecordHistory { get; set; } = true;
     public string Hotkey { get; set; } = "Alt+Space";
-    public string Theme { get; set; } = "System";
+    public string Theme { get; set; } = "Auto";
+    public string DayTheme { get; set; } = "Paper";
+    public string NightTheme { get; set; } = "InkTeal";
     public bool StartWithWindows { get; set; }
     public string EverythingPathMode { get; set; } = "Auto";
     public string EverythingPath { get; set; } = string.Empty;
@@ -34,6 +36,8 @@ public sealed class AppSettings
         RecordHistory = RecordHistory,
         Hotkey = Hotkey,
         Theme = Theme,
+        DayTheme = DayTheme,
+        NightTheme = NightTheme,
         StartWithWindows = StartWithWindows,
         EverythingPathMode = EverythingPathMode,
         EverythingPath = EverythingPath,
@@ -66,7 +70,14 @@ public sealed class AppSettings
 
         if (string.IsNullOrWhiteSpace(Hotkey) || !Services.HotkeyGesture.TryParse(Hotkey, out _))
             Hotkey = "Alt+Space";
-        if (!new[] { "System", "Light", "Dark", "Win11Blue", "Win11Graphite", "Win11Mist", "Win11Sage" }.Contains(Theme)) Theme = "System";
+
+        // Theme ids: Auto / System + the four curated palettes (legacy ids remapped by ThemeService).
+        var knownThemes = new[] { "Auto", "System", "InkTeal", "Dusk", "Paper", "Sky",
+            "Dark", "Light", "Win11Blue", "Win11Graphite", "Win11Mist", "Win11Sage" };
+        if (!knownThemes.Contains(Theme)) Theme = "Auto";
+        if (DayTheme is not ("Paper" or "Sky")) DayTheme = "Paper";
+        if (NightTheme is not ("InkTeal" or "Dusk")) NightTheme = "InkTeal";
+
         EverythingPathMode = EverythingPathMode == "Manual" ? "Manual" : "Auto";
         EverythingLifecycle = EverythingLifecycle == "Connect" ? "Connect" : "Managed";
         EverythingPath ??= string.Empty;

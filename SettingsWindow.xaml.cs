@@ -33,7 +33,11 @@ public sealed partial class SettingsWindow : Window
         _webSearchUrl = settings.WebSearchUrl;
         HotkeyBox.Text = settings.Hotkey;
         LanguageBox.SelectedValue = settings.Language;
-        ThemeBox.SelectedValue = settings.Theme;
+        ThemeBox.SelectedValue = ThemeService.ResolveRequestedForUi(settings.Theme);
+        DayThemeBox.SelectedValue = settings.DayTheme;
+        NightThemeBox.SelectedValue = settings.NightTheme;
+        ThemeService.ConfigureAutoPair(settings.DayTheme, settings.NightTheme);
+        UpdateThemeChrome(settings.Theme);
         StartupBox.IsChecked = settings.StartWithWindows;
         EverythingModeBox.SelectedValue = settings.EverythingPathMode.Equals("Manual", StringComparison.OrdinalIgnoreCase)
             ? "Manual"
@@ -88,7 +92,9 @@ public sealed partial class SettingsWindow : Window
         var settings = new AppSettings
         {
             Hotkey = hotkey,
-            Theme = ThemeBox.SelectedValue as string ?? "System",
+            Theme = ThemeBox.SelectedValue as string ?? "Auto",
+            DayTheme = DayThemeBox.SelectedValue as string ?? "Paper",
+            NightTheme = NightThemeBox.SelectedValue as string ?? "InkTeal",
             StartWithWindows = StartupBox.IsChecked == true,
             EverythingPathMode = everythingMode,
             EverythingPath = everythingPath,
@@ -167,8 +173,55 @@ public sealed partial class SettingsWindow : Window
 
     private void ThemeBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
-        if (ThemeBox.SelectedValue is string theme)
-            ThemeService.Apply(theme);
+        if (ThemeBox.SelectedValue is not string theme)
+            return;
+        ThemeService.ConfigureAutoPair(
+            DayThemeBox?.SelectedValue as string ?? "Paper",
+            NightThemeBox?.SelectedValue as string ?? "InkTeal");
+        ThemeService.Apply(theme);
+        UpdateThemeChrome(theme);
+    }
+
+    private void DayThemeBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        ThemeService.ConfigureAutoPair(
+            DayThemeBox.SelectedValue as string ?? "Paper",
+            NightThemeBox?.SelectedValue as string ?? "InkTeal");
+        ThemeService.Apply(ThemeBox.SelectedValue as string ?? ThemeService.Auto);
+        UpdateThemeChrome(ThemeBox.SelectedValue as string ?? ThemeService.Auto);
+    }
+
+    private void NightThemeBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        ThemeService.ConfigureAutoPair(
+            DayThemeBox?.SelectedValue as string ?? "Paper",
+            NightThemeBox.SelectedValue as string ?? "InkTeal");
+        ThemeService.Apply(ThemeBox.SelectedValue as string ?? ThemeService.Auto);
+        UpdateThemeChrome(ThemeBox.SelectedValue as string ?? ThemeService.Auto);
+    }
+
+    private void UpdateThemeChrome(string theme)
+    {
+        if (ThemeEffectiveHint is null || AutoPairPanel is null)
+            return;
+        var isAuto = theme.Equals("Auto", StringComparison.OrdinalIgnoreCase) ||
+                     theme.Equals("System", StringComparison.OrdinalIgnoreCase);
+        AutoPairPanel.Visibility = isAuto ? Visibility.Visible : Visibility.Collapsed;
+        AutoPairPanel.Opacity = isAuto ? 1 : 0.45;
+        AutoPairPanel.IsEnabled = isAuto;
+
+        var effective = ThemeService.ResolveEffectiveTheme(theme);
+        var label = effective switch
+        {
+            ThemeService.InkTeal => "墨青 · 夜",
+            ThemeService.Dusk => "赭暮 · 夜",
+            ThemeService.Paper => "素笺 · 日",
+            ThemeService.Sky => "晴空 · 日",
+            _ => effective
+        };
+        ThemeEffectiveHint.Text = isAuto
+            ? $"当前生效：{label}（随系统浅色/深色自动切换）"
+            : $"当前生效：{label}";
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)

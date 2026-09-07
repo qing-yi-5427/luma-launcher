@@ -196,15 +196,39 @@
                 </ComboBox>
 
                 <TextBlock Text="外观" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,19,0,7"/>
-                <ComboBox AutomationProperties.Name="主题" x:Name="ThemeBox" SelectedValuePath="Tag" SelectionChanged="ThemeBox_SelectionChanged">
-                    <ComboBoxItem Content="跟随系统" Tag="System"/>
-                    <ComboBoxItem Content="Luma 暖夜" Tag="Dark"/>
-                    <ComboBoxItem Content="Luma 暖昼" Tag="Light"/>
-                    <ComboBoxItem Content="Windows 11 · 蓝晶" Tag="Win11Blue"/>
-                    <ComboBoxItem Content="Windows 11 · 石墨" Tag="Win11Graphite"/>
-                    <ComboBoxItem Content="Windows 11 · 雾白" Tag="Win11Mist"/>
-                    <ComboBoxItem Content="Windows 11 · 鼠尾草" Tag="Win11Sage"/>
+                <ComboBox AutomationProperties.Name="主题" x:Name="ThemeBox" SelectedValuePath="Tag"
+                          SelectionChanged="ThemeBox_SelectionChanged">
+                    <ComboBoxItem Content="自动（随系统日夜）" Tag="Auto"/>
+                    <ComboBoxItem Content="墨青 · 夜" Tag="InkTeal"/>
+                    <ComboBoxItem Content="赭暮 · 夜" Tag="Dusk"/>
+                    <ComboBoxItem Content="素笺 · 日" Tag="Paper"/>
+                    <ComboBoxItem Content="晴空 · 日" Tag="Sky"/>
                 </ComboBox>
+                <TextBlock x:Name="ThemeEffectiveHint" Foreground="{DynamicResource FaintTextBrush}" FontSize="11.5"
+                           Margin="2,5,0,0" TextWrapping="Wrap"/>
+
+                <Grid x:Name="AutoPairPanel" Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="日间主题" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,0,0,6"/>
+                        <ComboBox x:Name="DayThemeBox" SelectedValuePath="Tag" AutomationProperties.Name="日间主题"
+                                  SelectionChanged="DayThemeBox_SelectionChanged">
+                            <ComboBoxItem Content="素笺" Tag="Paper"/>
+                            <ComboBoxItem Content="晴空" Tag="Sky"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                        <TextBlock Text="夜间主题" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,0,0,6"/>
+                        <ComboBox x:Name="NightThemeBox" SelectedValuePath="Tag" AutomationProperties.Name="夜间主题"
+                                  SelectionChanged="NightThemeBox_SelectionChanged">
+                            <ComboBoxItem Content="墨青" Tag="InkTeal"/>
+                            <ComboBoxItem Content="赭暮" Tag="Dusk"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Grid>
 
                 <TextBlock Text="Everything" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,19,0,7"/>
                 <ComboBox x:Name="EverythingModeBox" SelectedValuePath="Tag"

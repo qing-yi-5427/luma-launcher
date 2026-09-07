@@ -3,58 +3,141 @@ using System.Windows.Media;
 
 namespace LumaLauncher.Services;
 
+/// <summary>
+/// Theme tokens for Luma. Four curated palettes (2 day / 2 night) plus Auto,
+/// which follows the Windows apps light/dark preference and swaps the paired
+/// day/night themes.
+/// </summary>
 public static class ThemeService
 {
-    private static string _requestedTheme = "System";
+    public const string Auto = "Auto";
+    public const string InkTeal = "InkTeal";
+    public const string Dusk = "Dusk";
+    public const string Paper = "Paper";
+    public const string Sky = "Sky";
+
+    private static string _requestedTheme = Auto;
+    private static string _dayTheme = Paper;
+    private static string _nightTheme = InkTeal;
+
     public static void StartFollowingSystem() => SystemEvents.UserPreferenceChanged += PreferenceChanged;
     public static void StopFollowingSystem() => SystemEvents.UserPreferenceChanged -= PreferenceChanged;
+
     private static void PreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
     {
         var app = System.Windows.Application.Current;
         if (app is not null && !app.Dispatcher.HasShutdownStarted)
             app.Dispatcher.BeginInvoke(() => Apply(_requestedTheme));
     }
+
     private sealed record Palette(
         string Window, string Panel, string Hover, string Selected,
         string Text, string Muted, string Faint, string Stroke,
         string Accent, string AccentSoft);
 
-    private static readonly Palette LumaDark = new(
-        "#F3121519", "#FF1A1E23", "#FF22272D", "#FF282C2D",
-        "#FFF4F1EA", "#FFB0B4B8", "#FF9A9EA3", "#FF30353B",
-        "#FFE9A84C", "#2EE9A84C");
+    // ── 夜间 01 · 墨青 InkTeal ──────────────────────────────────────────
+    // Cool midnight blue-black + mint-teal accent. Focus, calm, technical.
+    private static readonly Palette InkTealPalette = new(
+        Window: "#F00D1218",
+        Panel: "#FF141B23",
+        Hover: "#FF1C2632",
+        Selected: "#FF243444",
+        Text: "#FFE6EEF5",
+        Muted: "#FF8A9AAB",
+        Faint: "#FF5A6B7C",
+        Stroke: "#FF2A3644",
+        Accent: "#FF3FD9B8",
+        AccentSoft: "#333FD9B8");
 
-    private static readonly Palette LumaLight = new(
-        "#F7F2F0EA", "#FFFAF8F3", "#FFF0ECE4", "#FFE9E3D8",
-        "#FF1B1D20", "#FF656A70", "#FF656A70", "#FFDAD4C9",
-        "#FFB86D1D", "#24B86D1D");
+    // ── 夜间 02 · 赭暮 Dusk ─────────────────────────────────────────────
+    // Warm charcoal + terracotta-coral accent. Editorial, soft contrast.
+    private static readonly Palette DuskPalette = new(
+        Window: "#F0121012",
+        Panel: "#FF1A1618",
+        Hover: "#FF252023",
+        Selected: "#FF32282C",
+        Text: "#FFF1EBE8",
+        Muted: "#FFA89895",
+        Faint: "#FF6E605E",
+        Stroke: "#FF3A3034",
+        Accent: "#FFE07A6B",
+        AccentSoft: "#33E07A6B");
+
+    // ── 日间 01 · 素笺 Paper ────────────────────────────────────────────
+    // Warm rice-paper white + burnt sienna. Print-like, easy on the eyes.
+    private static readonly Palette PaperPalette = new(
+        Window: "#F6F4EFE8",
+        Panel: "#FFFBF9F5",
+        Hover: "#FFEFE9DF",
+        Selected: "#FFE4DCD0",
+        Text: "#FF1C1B19",
+        Muted: "#FF6B6560",
+        Faint: "#FF8A8480",
+        Stroke: "#FFD8D2C8",
+        Accent: "#FFC45C26",
+        AccentSoft: "#22C45C26");
+
+    // ── 日间 02 · 晴空 Sky ──────────────────────────────────────────────
+    // Cool daylight blue-gray + cerulean. Airy, precise, office-friendly.
+    private static readonly Palette SkyPalette = new(
+        Window: "#F4EFF4F9",
+        Panel: "#FFFAFCFE",
+        Hover: "#FFE4EBF2",
+        Selected: "#FFD8E4F0",
+        Text: "#FF0F172A",
+        Muted: "#FF5B6B7C",
+        Faint: "#FF7C8B9A",
+        Stroke: "#FFD0DAE4",
+        Accent: "#FF0B7BC4",
+        AccentSoft: "#220B7BC4");
 
     private static readonly IReadOnlyDictionary<string, Palette> Palettes =
         new Dictionary<string, Palette>(StringComparer.OrdinalIgnoreCase)
         {
-            ["Dark"] = LumaDark,
-            ["Light"] = LumaLight,
-            ["Win11Blue"] = new(
-                "#F20C1623", "#FF111F2E", "#FF192C40", "#FF20384E",
-                "#FFF5F9FC", "#FFA9B7C5", "#FF9AAABD", "#FF2D4358",
-                "#FF60CDFF", "#3260CDFF"),
-            ["Win11Graphite"] = new(
-                "#F218191B", "#FF202225", "#FF292C30", "#FF33373C",
-                "#FFF7F7F7", "#FFB2B6BC", "#FFA0A6AF", "#FF3A3E44",
-                "#FFA8B3C5", "#30A8B3C5"),
-            ["Win11Mist"] = new(
-                "#F4F3F7FB", "#FFF9FBFD", "#FFEAF1F8", "#FFDDEAF6",
-                "#FF18212B", "#FF536273", "#FF536273", "#FFD2DCE6",
-                "#FF0067C0", "#240067C0"),
-            ["Win11Sage"] = new(
-                "#F3F1F6F2", "#FFF8FBF8", "#FFE7F1EB", "#FFD8EADF",
-                "#FF17221C", "#FF52665B", "#FF52665B", "#FFCFDDD5",
-                "#FF0F7B6C", "#260F7B6C")
+            [InkTeal] = InkTealPalette,
+            [Dusk] = DuskPalette,
+            [Paper] = PaperPalette,
+            [Sky] = SkyPalette
         };
+
+    public static readonly (string Id, string Label, bool IsDark)[] Catalog =
+    [
+        (InkTeal, "墨青", true),
+        (Dusk, "赭暮", true),
+        (Paper, "素笺", false),
+        (Sky, "晴空", false)
+    ];
+
+    public static bool IsDarkTheme(string themeId)
+    {
+        var id = NormalizeId(themeId);
+        return id is InkTeal or Dusk;
+    }
+
+    public static void ConfigureAutoPair(string dayTheme, string nightTheme)
+    {
+        if (Palettes.ContainsKey(dayTheme)) _dayTheme = dayTheme;
+        if (Palettes.ContainsKey(nightTheme)) _nightTheme = nightTheme;
+    }
+
+    public static string ResolveEffectiveTheme(string requestedTheme)
+    {
+        if (IsAuto(requestedTheme))
+            return SystemPrefersLight() ? _dayTheme : _nightTheme;
+        return NormalizeId(requestedTheme);
+    }
+
+    /// <summary>Maps stored theme ids (including legacy) to the Settings combo tags.</summary>
+    public static string ResolveRequestedForUi(string theme)
+    {
+        var normalized = NormalizeId(theme);
+        return normalized;
+    }
 
     public static void Apply(string requestedTheme)
     {
-        _requestedTheme = requestedTheme;
+        _requestedTheme = NormalizeId(requestedTheme);
+
         if (System.Windows.SystemParameters.HighContrast)
         {
             foreach (var key in new[] { "WindowBrush", "PanelBrush", "PanelHoverBrush" })
@@ -65,9 +148,9 @@ public static class ThemeService
             System.Windows.Application.Current.Resources["AccentSoftBrush"] = System.Windows.SystemColors.ControlBrush;
             return;
         }
-        var palette = requestedTheme.Equals("System", StringComparison.OrdinalIgnoreCase)
-            ? SystemPrefersLight() ? LumaLight : LumaDark
-            : Palettes.GetValueOrDefault(requestedTheme, LumaDark);
+
+        var effective = ResolveEffectiveTheme(_requestedTheme);
+        var palette = Palettes.GetValueOrDefault(effective, InkTealPalette);
 
         Set("WindowBrush", palette.Window);
         Set("PanelBrush", palette.Panel);
@@ -79,6 +162,26 @@ public static class ThemeService
         Set("StrokeBrush", palette.Stroke);
         Set("AccentBrush", palette.Accent);
         Set("AccentSoftBrush", palette.AccentSoft);
+    }
+
+    private static bool IsAuto(string theme) =>
+        theme.Equals("Auto", StringComparison.OrdinalIgnoreCase) ||
+        theme.Equals("System", StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeId(string theme)
+    {
+        if (IsAuto(theme))
+            return Auto;
+        // Legacy ids map to the closest new palette.
+        return theme switch
+        {
+            "Dark" or "Win11Graphite" => InkTeal,
+            "Light" or "Win11Mist" => Paper,
+            "Win11Blue" => Sky,
+            "Win11Sage" => Paper,
+            _ when Palettes.ContainsKey(theme) => theme,
+            _ => Auto
+        };
     }
 
     private static bool SystemPrefersLight()

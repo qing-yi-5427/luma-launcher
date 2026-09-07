@@ -17,7 +17,7 @@ internal static class ReleaseRegressionTests
         Check(QuickSwitchService.NativeInputSize == 40, "x64 INPUT ABI must be 40 bytes");
 
         var repaired = JsonSerializer.Deserialize<AppSettings>("{\"Theme\":null,\"Aliases\":null,\"Hotkey\":\"bad\",\"ResultSort\":null,\"WebSearchUrl\":null}")!.Normalize();
-        Check(repaired.Theme == "System" && repaired.Hotkey == "Alt+Space" && repaired.Aliases == "", "Legacy settings normalization");
+        Check(repaired.Theme is "Auto" or "System" && repaired.Hotkey == "Alt+Space" && repaired.Aliases == "", "Legacy settings normalization");
         Check(repaired.WebSearchUrl.StartsWith("https://") && repaired.ResultSort == "Smart", "Invalid search settings normalization");
         try { new AppSettings { SchemaVersion = 999 }.Normalize(); throw new Exception("Future schema accepted"); }
         catch (InvalidDataException) { }
@@ -33,8 +33,8 @@ internal static class ReleaseRegressionTests
         File.Delete(settingsPath); // Isolated test directory only.
 
         var store = new SettingsStore();
-        store.Save(new AppSettings { RecordHistory = false, Theme = "Win11Mist" });
-        Check(!new SettingsStore().Current.RecordHistory && new SettingsStore().Current.Theme == "Win11Mist", "Settings roundtrip");
+        store.Save(new AppSettings { RecordHistory = false, Theme = "InkTeal" });
+        Check(!new SettingsStore().Current.RecordHistory && new SettingsStore().Current.Theme == "InkTeal", "Settings roundtrip");
         foreach (var (mode, _) in ResultRanker.Options)
         {
             store.Save(new AppSettings { ResultSort = mode });

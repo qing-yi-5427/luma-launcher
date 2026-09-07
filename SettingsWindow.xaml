@@ -168,11 +168,31 @@
                           HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="0,0,8,10">
                 <TextBlock Text="唤醒快捷键" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,0,0,7"/>
-                <ComboBox AutomationProperties.Name="全局快捷键" x:Name="HotkeyBox" SelectedValuePath="Tag">
-                    <ComboBoxItem Content="Alt + Space" Tag="Alt+Space"/>
-                    <ComboBoxItem Content="Ctrl + Space" Tag="Ctrl+Space"/>
-                    <ComboBoxItem Content="Ctrl + Alt + Space" Tag="Ctrl+Alt+Space"/>
-                    <ComboBoxItem Content="Ctrl + Shift + Space" Tag="Ctrl+Shift+Space"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="HotkeyBox" AutomationProperties.Name="全局快捷键"
+                             ToolTip="任意组合，例如 Alt+E、Ctrl+Shift+F12、Win+Space"/>
+                    <ComboBox Grid.Column="1" x:Name="HotkeyPresetBox" Width="120" Margin="8,0,0,0"
+                              AutomationProperties.Name="快捷键预设" SelectionChanged="HotkeyPreset_SelectionChanged">
+                        <ComboBoxItem Content="预设…" Tag=""/>
+                        <ComboBoxItem Content="Alt + Space" Tag="Alt+Space"/>
+                        <ComboBoxItem Content="Ctrl + Space" Tag="Ctrl+Space"/>
+                        <ComboBoxItem Content="Ctrl + Alt + Space" Tag="Ctrl+Alt+Space"/>
+                        <ComboBoxItem Content="Ctrl + Shift + Space" Tag="Ctrl+Shift+Space"/>
+                        <ComboBoxItem Content="Alt + E" Tag="Alt+E"/>
+                        <ComboBoxItem Content="Ctrl + Shift + F12" Tag="Ctrl+Shift+F12"/>
+                    </ComboBox>
+                </Grid>
+                <TextBlock Text="支持 Alt/Ctrl/Shift/Win + 字母、数字、F 键、Space 等。"
+                           Foreground="{DynamicResource FaintTextBrush}" FontSize="11.5" Margin="2,5,0,0"/>
+
+                <TextBlock Text="界面语言" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,16,0,7"/>
+                <ComboBox x:Name="LanguageBox" SelectedValuePath="Tag">
+                    <ComboBoxItem Content="简体中文" Tag="zh-CN"/>
+                    <ComboBoxItem Content="English" Tag="en-US"/>
                 </ComboBox>
 
                 <TextBlock Text="外观" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,19,0,7"/>
@@ -220,7 +240,13 @@
 
                 <CheckBox x:Name="StartupBox" Content="登录 Windows 后自动启动" Margin="2,17,0,0"/>
                 <CheckBox x:Name="QuickSwitchBox" Content="启用文件对话框快速切换（Ctrl + G）" Margin="2,12,0,0"/>
-                <TextBlock Text="Luma 不安装索引服务；文件搜索由本机 Everything 提供。"
+                <CheckBox x:Name="WindowSwitcherBox" Content="启用窗口切换（搜窗口标题 / 进程名）" Margin="2,12,0,0"/>
+                <CheckBox x:Name="SystemCommandsBox" Content="启用系统命令（锁屏、关机、设置等）" Margin="2,12,0,0"/>
+                <CheckBox x:Name="BookmarksBox" Content="启用浏览器书签搜索" Margin="2,12,0,0"/>
+                <CheckBox x:Name="GameModeBox" Content="游戏模式：全屏应用时暂停热键（Ctrl+F12 手动切换）" Margin="2,12,0,0"/>
+                <CheckBox x:Name="PreviewBox" Content="启用文件预览（空格 / 选中时）" Margin="2,12,0,0"/>
+                <CheckBox x:Name="WindowsIndexBox" Content="优先使用 Windows 索引（Everything 不可用时自动回退）" Margin="2,12,0,0"/>
+                <TextBlock Text="Luma 不安装索引服务；文件搜索优先使用 Everything，缺失时回退 Windows 搜索索引。"
                            Foreground="{DynamicResource FaintTextBrush}" FontSize="11.5" Margin="2,11,0,0"/>
 
                 <TextBlock Text="搜索个性化" Foreground="{DynamicResource AccentBrush}" FontSize="11.5"
@@ -248,12 +274,22 @@
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap"/>
                 <TextBlock Text="格式：关键词|标题|程序|参数|工作目录；参数中可使用 {query}。"
                            Foreground="{DynamicResource FaintTextBrush}" FontSize="11.5" Margin="2,5,0,0" TextWrapping="Wrap"/>
+
+                <TextBlock Text="多引擎网页搜索" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,16,0,7"/>
+                <TextBox AutomationProperties.Name="搜索引擎" x:Name="EnginesBox" Height="88" AcceptsReturn="True" VerticalContentAlignment="Top"
+                         VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap"
+                         ToolTip="g|Google|https://www.google.com/search?q={query}"/>
+                <TextBlock Text="格式：前缀|名称|URL；留空则使用内置引擎（g/bd/gh/bili 等）。"
+                           Foreground="{DynamicResource FaintTextBrush}" FontSize="11.5" Margin="2,5,0,0" TextWrapping="Wrap"/>
+
                 <TextBlock Text="数据与隐私" FontSize="14" FontWeight="SemiBold" Margin="0,24,0,10"/>
                 <CheckBox x:Name="HistoryBox" Content="记录使用历史，用于推荐和排序"/>
+                <CheckBox x:Name="QueryHistoryBox" Content="记录搜索词历史（Ctrl+H 面板与 Tab 补全）" Margin="0,12,0,0"/>
                 <TextBlock Text="配置、收藏和使用历史保存在本机。暂停记录不会删除已有数据。"
                            TextWrapping="Wrap" FontSize="11.5" Margin="0,8,0,10"/>
                 <WrapPanel>
                     <Button Content="清空历史（保留收藏）" Click="ClearHistory_Click" Style="{StaticResource QuietButton}" Margin="0,0,6,6"/>
+                    <Button Content="清空搜索词历史" Click="ClearQueryHistory_Click" Style="{StaticResource QuietButton}" Margin="0,0,6,6"/>
                     <Button Content="导入配置" Click="ImportSettings_Click" Style="{StaticResource QuietButton}" Margin="0,0,6,6"/>
                     <Button Content="导出配置" Click="ExportSettings_Click" Style="{StaticResource QuietButton}" Margin="0,0,6,6"/>
                 </WrapPanel>
@@ -262,10 +298,11 @@
                 <TextBlock x:Name="VersionText" FontSize="12" Margin="0,0,0,10"/>
                 <WrapPanel>
                     <Button Content="检查更新" Click="CheckUpdate_Click" Style="{StaticResource QuietButton}" Margin="0,0,6,6"/>
+                    <Button Content="下载并校验" Click="DownloadUpdate_Click" Style="{StaticResource QuietButton}" Margin="0,0,6,6"/>
                     <Button Content="下载页" Click="OpenRelease_Click" Style="{StaticResource QuietButton}" Margin="0,0,6,6"/>
                     <Button Content="开源许可" Click="Licenses_Click" Style="{StaticResource QuietButton}" Margin="0,0,6,6"/>
                 </WrapPanel>
-                <TextBlock x:Name="UpdateStatusText" Text="仅在点击检查时访问 GitHub。退出 Luma 后替换 EXE 即可升级。"
+                <TextBlock x:Name="UpdateStatusText" Text="仅在点击检查时访问 GitHub。下载并校验会验证 SHA-256 后暂存替换脚本，不会静默覆盖。"
                            TextWrapping="Wrap" FontSize="11.5"/>
             </StackPanel>
             </ScrollViewer>

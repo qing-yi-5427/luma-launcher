@@ -11,7 +11,11 @@ public enum LauncherResultKind
     Folder,
     Calculation,
     Web,
-    Command
+    Command,
+    Window,
+    System,
+    Bookmark,
+    History
 }
 
 public sealed class LauncherResult : INotifyPropertyChanged
@@ -24,13 +28,13 @@ public sealed class LauncherResult : INotifyPropertyChanged
     public required string Target { get; init; }
     public required LauncherResultKind Kind { get; init; }
     public required double Score { get; init; }
-    // Position in the provider's globally sorted query (null for applications/tools/history).
     public int? ProviderOrder { get; init; }
     public long? IndexedSize { get; init; }
     public long? IndexedModifiedFileTime { get; init; }
     public string Arguments { get; init; } = string.Empty;
     public string WorkingDirectory { get; init; } = string.Empty;
     public string CopyText { get; init; } = string.Empty;
+
     public string SourceLabel => Kind switch
     {
         LauncherResultKind.Application => "APP",
@@ -38,17 +42,27 @@ public sealed class LauncherResult : INotifyPropertyChanged
         LauncherResultKind.File => "FILE",
         LauncherResultKind.Calculation => "CALC",
         LauncherResultKind.Web => "WEB",
+        LauncherResultKind.Window => "WIN",
+        LauncherResultKind.System => "SYS",
+        LauncherResultKind.Bookmark => "BM",
+        LauncherResultKind.History => "HIST",
         _ => "CMD"
     };
+
     public string FallbackGlyph => Kind switch
     {
-        LauncherResultKind.Application => "\uE71D",
-        LauncherResultKind.Folder => "\uE8B7",
-        LauncherResultKind.File => "\uE7C3",
-        LauncherResultKind.Calculation => "\uE8EF",
-        LauncherResultKind.Web => "\uE774",
-        _ => "\uE756"
+        LauncherResultKind.Application => "",
+        LauncherResultKind.Folder => "",
+        LauncherResultKind.File => "",
+        LauncherResultKind.Calculation => "",
+        LauncherResultKind.Web => "",
+        LauncherResultKind.Window => "",
+        LauncherResultKind.System => "",
+        LauncherResultKind.Bookmark => "",
+        LauncherResultKind.History => "",
+        _ => ""
     };
+
     public bool CanRunAsAdministrator => Kind is LauncherResultKind.Application or LauncherResultKind.Command ||
                                            Path.GetExtension(Target).Equals(".exe", StringComparison.OrdinalIgnoreCase);
     public bool IsFileSystemItem => Kind is LauncherResultKind.Application or LauncherResultKind.File or LauncherResultKind.Folder;

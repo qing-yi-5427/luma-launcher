@@ -1,36 +1,57 @@
 using LumaLauncher.Models;
+using LumaLauncher.Services.Providers;
 
 namespace LumaLauncher.Services;
 
 public sealed class SearchCoordinator : IDisposable
 {
-    private readonly AppIndexService _apps = new();
-    private readonly EverythingSearchService _everything = new();
+    private readonly ApplicationProvider _apps = new();
+    private readonly EverythingFileProvider _files = new();
+    private readonly BuiltInToolsProvider _builtIns = new();
+    private readonly WindowSwitcherProvider _windows = new();
+    private readonly SystemCommandsProvider _system = new();
+    private readonly BrowserBookmarkProvider _bookmarks = new();
     private readonly IconService _icons = new();
     private readonly UsageStore _usage = new();
-    private readonly BuiltInSearchService _builtIns = new();
+    private readonly PreviewService _preview = new();
+    private readonly List<ILumaProvider> _providers;
     private IReadOnlyDictionary<string, string> _aliases = new Dictionary<string, string>();
-    private Task? _initializeTask;
     private string _resultSort = ResultRanker.Smart;
     private bool _recordHistory = true;
 
-    private readonly Func<string, int, CancellationToken, string, string, Task<EverythingSearchResponse>> _queryFiles;
+    public SearchCoordinator()
+    {
+        _providers = [_builtIns, _system, _apps, _windows, _files, _bookmarks];
+    }
 
-    public SearchCoordinator() => _queryFiles = (query, limit, token, filter, sort) => _everything.SearchAsync(query, limit, token, filter, sort);
+    internal SearchCoordinator(Func<string, int, CancellationToken, string, string, Task<EverythingSearchResponse>> queryFiles)
+        : this()
+    {
+        // Test seam: wrap the injected file query behind the Everything provider surface.
+        _files.TestQuery = queryFiles;
+    }
 
     internal SearchCoordinator(Func<string, int, CancellationToken, string, Task<EverythingSearchResponse>> queryFiles)
-        : this((query, limit, token, filter, _) => queryFiles(query, limit, token, filter)) { }
-    internal SearchCoordinator(Func<string, int, CancellationToken, string, string, Task<EverythingSearchResponse>> queryFiles) => _queryFiles = queryFiles;
+        : this((query, limit, token, filter, _) => queryFiles(query, limit, token, filter))
+    {
+    }
 
     public bool IsInitialized => _apps.IsReady;
+    public UsageStore Usage => _usage;
+    public PreviewService Preview => _preview;
 
     public Task InitializeAsync(CancellationToken token = default) =>
-        _initializeTask ??= _apps.InitializeAsync(token);
+        _apps.InitializeAsync(token);
 
     public bool Configure(AppSettings settings)
     {
-        _everything.Configure(settings.EverythingPathMode, settings.EverythingPath, settings.EverythingLifecycle);
+        UiStrings.SetCulture(settings.Language);
+        _files.Configure(settings.EverythingPathMode, settings.EverythingPath, settings.EverythingLifecycle);
+        _files.PreferWindowsIndex = settings.PreferWindowsIndex;
         _builtIns.Configure(settings);
+        _windows.Enabled = settings.EnableWindowSwitcher;
+        _system.Enabled = settings.EnableSystemCommands;
+        _bookmarks.Enabled = settings.EnableBookmarks;
         _aliases = ParseAliases(settings.Aliases);
         _resultSort = ResultRanker.Normalize(settings.ResultSort);
         _recordHistory = settings.RecordHistory;
@@ -38,7 +59,7 @@ public sealed class SearchCoordinator : IDisposable
     }
 
     public Task<bool> EnsureEverythingRunningAsync(CancellationToken token = default) =>
-        _everything.EnsureRunningAsync(token);
+        _files.EnsureRunningAsync(token);
 
     public async Task ReloadAppsAsync(CancellationToken token = default) =>
         await _apps.ReloadAsync(token).ConfigureAwait(false);
@@ -47,84 +68,82 @@ public sealed class SearchCoordinator : IDisposable
         string filter = "All", Action<SearchBatch>? publishApplications = null)
     {
         token.ThrowIfCancellationRequested();
-        var sortMode = _resultSort; // One immutable choice for this entire asynchronous request.
-        var builtInResults = filter == "All" ? _builtIns.Search(query) : [];
-        if (builtInResults.Count > 0 &&
-            (builtInResults.Any(result => result.Kind != LauncherResultKind.Web) ||
-             query.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-             query.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
-             query.StartsWith("? ") || query.StartsWith("web ") || query.StartsWith("g ")))
+        var sortMode = _resultSort;
+        var trimmed = query.Trim();
+
+        // Built-ins and system commands short-circuit.
+        var builtInTask = _builtIns.QueryAsync(BuildContext(trimmed, maximumResults, filter, sortMode), token);
+        var builtInResults = await builtInTask.ConfigureAwait(false);
+        if (_builtIns.ShouldShortCircuit(trimmed, builtInResults))
             return new SearchBatch(builtInResults.Take(maximumResults).ToList(), "Luma 内建工具", true);
 
-        if (_initializeTask is not null && !_apps.IsReady)
+        var systemResults = await _system.QueryAsync(BuildContext(trimmed, maximumResults, filter, sortMode), token)
+            .ConfigureAwait(false);
+        if (systemResults.Count > 0 && systemResults.Any(r => r.Score > 600))
         {
-            try { await _initializeTask.WaitAsync(token).ConfigureAwait(false); }
-            catch (OperationCanceledException) { throw; }
-            catch { }
-        }
-
-        var preparedQuery = FuzzyMatcher.Prepare(query);
-        var knownTask = Task.Run<IReadOnlyList<LauncherResult>>(() =>
-            !ResultRanker.IsProviderSort(sortMode) && !LooksLikeEverythingSyntax(query)
-                ? _usage.Search(query, filter, token) : [], token);
-        var appTask = Task.Run<IReadOnlyList<LauncherResult>>(() => filter is "File" or "Folder"
-            ? [] : _apps.Search(preparedQuery, Math.Max(maximumResults, _apps.Count), _usage, _aliases), token);
-        var fileCandidateLimit = maximumResults <= 64
-            ? Math.Max(maximumResults * 5, 40)
-            : Math.Max(maximumResults * 2, 512);
-        if (ResultRanker.IsProviderSort(sortMode)) fileCandidateLimit = maximumResults;
-        var fileTask = filter == "Application"
-            ? Task.FromResult(new EverythingSearchResponse([], true, "仅应用"))
-            : _queryFiles(query, fileCandidateLimit, token, filter, sortMode);
-        await appTask.ConfigureAwait(false);
-        if (!fileTask.IsCompleted && appTask.Result.Count > 0)
-            publishApplications?.Invoke(new SearchBatch(ResultRanker.Rank(appTask.Result, sortMode, maximumResults, _usage.GetBoost),
-                "应用已就绪 · 文件搜索中…", false));
-        await fileTask.ConfigureAwait(false);
-        token.ThrowIfCancellationRequested();
-
-        var all = new List<LauncherResult>(appTask.Result.Count + fileTask.Result.Results.Count);
-        all.AddRange(appTask.Result);
-        all.AddRange(await knownTask.ConfigureAwait(false));
-        token.ThrowIfCancellationRequested();
-        if (filter == "All") all.AddRange(builtInResults);
-        var everythingSyntax = LooksLikeEverythingSyntax(query);
-        for (var index = 0; index < fileTask.Result.Results.Count; index++)
-        {
-            var file = fileTask.Result.Results[index];
-            var match = everythingSyntax || ResultRanker.IsProviderSort(sortMode)
-                ? 120 - index
-                : FuzzyMatcher.Score(preparedQuery,
-                    FuzzyMatcher.PrepareCandidate(file.Title),
-                    FuzzyMatcher.PrepareCandidate(file.Subtitle));
-            if (double.IsNegativeInfinity(match))
-                continue;
-            all.Add(new LauncherResult
+            // Strong system-command match (e.g. exact "lock") still merges below;
+            // keep going so files/apps can compete unless the match is exact-title.
+            if (systemResults.Any(r => r.Title.Equals(trimmed, StringComparison.OrdinalIgnoreCase)))
             {
-                Title = file.Title,
-                Subtitle = file.Subtitle,
-                Target = file.Target,
-                Kind = file.Kind,
-                ProviderOrder = ResultRanker.IsProviderSort(sortMode) ? index : null,
-                IndexedSize = file.IndexedSize,
-                IndexedModifiedFileTime = file.IndexedModifiedFileTime,
-                Score = match + _usage.GetBoost(file.Target),
-                IsFavorite = _usage.IsFavorite(file.Target)
-            });
+                var exact = systemResults.Where(r => r.Title.Equals(trimmed, StringComparison.OrdinalIgnoreCase)).ToList();
+                return new SearchBatch(exact, "系统命令", true);
+            }
         }
 
+        var preparedQuery = FuzzyMatcher.Prepare(trimmed);
+        var context = BuildContext(trimmed, maximumResults, filter, sortMode);
+
+        var knownTask = Task.Run<IReadOnlyList<LauncherResult>>(() =>
+            !ResultRanker.IsProviderSort(sortMode) && !LooksLikeEverythingSyntax(trimmed)
+                ? _usage.Search(trimmed, filter, token) : [], token);
+
+        var appTask = _apps.QueryAsync(context, token);
+        var windowTask = _windows.QueryAsync(context, token);
+        var bookmarkTask = _bookmarks.QueryAsync(context, token);
+        var fileTask = _files.QueryAsync(context, token);
+
+        var apps = await appTask.ConfigureAwait(false);
+        if (!fileTask.IsCompleted && apps.Count > 0)
+            publishApplications?.Invoke(new SearchBatch(ResultRanker.Rank(apps, sortMode, maximumResults, _usage.GetBoost),
+                UiStrings.Get("AppsReady"), false));
+
+        var files = await fileTask.ConfigureAwait(false);
+        token.ThrowIfCancellationRequested();
+        var known = await knownTask.ConfigureAwait(false);
+        var windows = await windowTask.ConfigureAwait(false);
+        var bookmarks = await bookmarkTask.ConfigureAwait(false);
+        if (filter == "All")
+            builtInResults = await builtInTask.ConfigureAwait(false);
+
+        var all = new List<LauncherResult>(
+            apps.Count + files.Count + known.Count + windows.Count + bookmarks.Count + builtInResults.Count + systemResults.Count);
+        all.AddRange(apps);
+        all.AddRange(known);
+        if (filter == "All")
+        {
+            all.AddRange(builtInResults);
+            all.AddRange(systemResults);
+            all.AddRange(windows);
+            all.AddRange(bookmarks);
+        }
+        all.AddRange(files);
+
+        // Cross-provider ranking: score already includes usage boost; Smart mode
+        // no longer permanently pins Everything files above applications.
         var unique = all
-            .GroupBy(result => result.Kind == LauncherResultKind.Application
-                ? $"app::{result.Title}"
-                : result.Target, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(result => GroupKey(result), StringComparer.OrdinalIgnoreCase)
             .Select(group => ResultRanker.Rank(group, sortMode, 1, _usage.GetBoost)[0])
             .ToList();
         var ranked = ResultRanker.Rank(unique, sortMode, maximumResults, _usage.GetBoost);
 
-        var source = filter == "Application" ? "应用" : fileTask.Result.Available ? "Everything + 应用" : $"仅应用 · {fileTask.Result.StatusText}";
-        var hasMore = unique.Count > maximumResults || fileTask.Result.HasMore;
-        return new SearchBatch(ranked, source, fileTask.Result.Available, hasMore,
-            fileTask.Result.Available && filter != "Application" ? fileTask.Result.TotalMatches : null);
+        var source = filter switch
+        {
+            "Application" => "应用",
+            "File" or "Folder" when _files.PreferWindowsIndex => UiStrings.Get("WindowsIndex"),
+            _ => files.Count > 0 && !_files.PreferWindowsIndex ? "综合搜索" : "应用与工具"
+        };
+        var hasMore = unique.Count > maximumResults;
+        return new SearchBatch(ranked, source, true, hasMore, files.Count > 0 ? files.Count : null);
     }
 
     public Task<SearchBatch> GetRecommendationsAsync(int maximumResults, CancellationToken token)
@@ -134,26 +153,46 @@ public sealed class SearchCoordinator : IDisposable
             token.ThrowIfCancellationRequested();
             var recent = _usage.GetRecent(maximumResults).ToList();
             token.ThrowIfCancellationRequested();
-            var status = recent.Count == 0 ? "输入应用、文件名或 Everything 语法" : "最近使用";
+            var status = recent.Count == 0 ? UiStrings.Get("InputHint") : UiStrings.Get("RecentUsage");
             return new SearchBatch(recent, status, true);
         }, token);
     }
 
     public void RecordLaunch(LauncherResult result) { if (_recordHistory) _usage.Record(result); }
     public void ClearHistory() => _usage.ClearHistory();
-
     public bool ToggleFavorite(LauncherResult result) => _usage.ToggleFavorite(result);
-
     public bool IsFavorite(LauncherResult result) => _usage.IsFavorite(result.Target);
-
     public void RemoveFromHistory(LauncherResult result) => _usage.Remove(result.Target);
-
-    public void ShutdownEverything() => _everything.ShutdownClient();
+    public void ShutdownEverything() => _files.ShutdownClient();
+    public void ReloadBookmarks() => _bookmarks.Reload();
 
     public Task<System.Windows.Media.ImageSource?> LoadIconAsync(LauncherResult result, CancellationToken token) =>
         _icons.GetAsync(result.Target, token);
 
-    public void TrimCaches() => _icons.Trim();
+    public void TrimCaches()
+    {
+        _icons.Trim();
+        _preview.TrimCache();
+    }
+
+    private ProviderContext BuildContext(string query, int maximumResults, string filter, string sortMode) => new()
+    {
+        Query = query,
+        Prepared = FuzzyMatcher.Prepare(query),
+        MaximumResults = maximumResults,
+        Filter = filter,
+        SortMode = sortMode,
+        Usage = _usage,
+        Aliases = _aliases
+    };
+
+    private static string GroupKey(LauncherResult result) => result.Kind switch
+    {
+        LauncherResultKind.Application => $"app::{result.Title}",
+        LauncherResultKind.Window => result.Target,
+        LauncherResultKind.System => result.Target,
+        _ => result.Target
+    };
 
     private static bool LooksLikeEverythingSyntax(string query) =>
         query.IndexOfAny([':', '*', '?', '|', '!', '<', '>', '"']) >= 0;
@@ -177,6 +216,6 @@ public sealed class SearchCoordinator : IDisposable
     public void Dispose()
     {
         _icons.Trim(0);
-        _everything.Dispose();
+        _files.ShutdownClient();
     }
 }

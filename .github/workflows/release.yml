@@ -1,0 +1,44 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet build Launcher.csproj -c Release
+      - run: dotnet run --project Tests/Luma.SmokeTests.csproj -c Release
+      - run: dotnet publish Launcher.csproj -p:PublishProfile=SingleFile
+      - name: Package release
+        shell: pwsh
+        run: |
+          $exe = "publish/win-x64/Luma.exe"
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path "publish/win-x64/Luma.exe.sha256" -Value "$hash  Luma.exe" -NoNewline
+          Write-Host "SHA256=$hash"
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            publish/win-x64/Luma.exe
+            publish/win-x64/Luma.exe.sha256
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Optional code signing via SignPath (free for OSS). Configure SIGNPATH_* secrets
+      # and the org/project/SigningPolicy GUIDs, then enable this step.
+      # - uses: signpath/github-action-submit-signing-request@v1
+      #   with:
+      #     github-artifact-id: ...
+      #     signpath-organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
+      #     signpath-project-slug: ${{ secrets.SIGNPATH_PROJECT }}
+      #     signing-policy-slug: release-signing
+      #     github-token: ${{ secrets.GITHUB_TOKEN }}
+      #     wait-for-completion: true

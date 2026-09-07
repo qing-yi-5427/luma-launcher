@@ -13,14 +13,15 @@ public sealed class HotkeyService
         Unregister();
         _window = window;
 
-        var candidates = new[] { requested, "Alt+Space", "Ctrl+Space", "Ctrl+Alt+Space" }
-            .Distinct(StringComparer.OrdinalIgnoreCase);
+        var candidates = BuildCandidates(requested);
         var lastError = 0;
 
         foreach (var candidate in candidates)
         {
-            var modifiers = ParseModifiers(candidate) | NativeMethods.ModNoRepeat;
-            if (NativeMethods.RegisterHotKey(window, HotkeyId, modifiers, NativeMethods.VkSpace))
+            if (!HotkeyGesture.TryParse(candidate, out var gesture))
+                continue;
+            var modifiers = gesture.Modifiers | NativeMethods.ModNoRepeat;
+            if (NativeMethods.RegisterHotKey(window, HotkeyId, modifiers, gesture.VirtualKey))
             {
                 _registered = true;
                 return new HotkeyRegistration(requested, candidate, !candidate.Equals(requested, StringComparison.OrdinalIgnoreCase), lastError);
@@ -41,12 +42,14 @@ public sealed class HotkeyService
         _registered = false;
     }
 
-    private static uint ParseModifiers(string gesture)
+    private static IEnumerable<string> BuildCandidates(string requested)
     {
-        var modifiers = 0u;
-        if (gesture.Contains("Alt", StringComparison.OrdinalIgnoreCase)) modifiers |= NativeMethods.ModAlt;
-        if (gesture.Contains("Ctrl", StringComparison.OrdinalIgnoreCase)) modifiers |= NativeMethods.ModControl;
-        if (gesture.Contains("Shift", StringComparison.OrdinalIgnoreCase)) modifiers |= NativeMethods.ModShift;
-        return modifiers;
+        if (HotkeyGesture.TryParse(requested, out _))
+            yield return requested;
+        foreach (var fallback in new[] { "Alt+Space", "Ctrl+Space", "Ctrl+Alt+Space" })
+        {
+            if (!fallback.Equals(requested, StringComparison.OrdinalIgnoreCase))
+                yield return fallback;
+        }
     }
 }

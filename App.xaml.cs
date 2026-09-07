@@ -84,6 +84,7 @@ public sealed partial class App : System.Windows.Application
         _settingsWindow = new SettingsWindow(_settingsStore.Current.Copy());
         _settingsWindow.SettingsSaved += SaveSettings;
         _settingsWindow.ClearHistoryRequested += _launcherWindow.ClearHistory;
+        _settingsWindow.ClearQueryHistoryRequested += () => _launcherWindow.ClearQueryHistory();
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
         _settingsWindow.Activate();

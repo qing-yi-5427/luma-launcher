@@ -16,6 +16,18 @@ public static class ResultExecutionService
                 return true;
             }
 
+            if (result.Kind == LauncherResultKind.System)
+                return SystemCommandsService.Execute(result);
+
+            if (result.Kind == LauncherResultKind.Window)
+                return WindowSwitcherService.Activate(result);
+
+            if (result.Kind == LauncherResultKind.History)
+            {
+                Clipboard.SetText(result.Target);
+                return true;
+            }
+
             var info = new ProcessStartInfo(result.Target)
             {
                 UseShellExecute = true,
@@ -78,38 +90,33 @@ public static class ResultExecutionService
     {
         if (!result.IsFileSystemItem)
             return;
-        TryStart(new ProcessStartInfo(result.Target) { UseShellExecute = true, Verb = "properties" }, "无法打开属性窗口");
+        TryStart(new ProcessStartInfo("rundll32.exe", $"shell32.dll,ShellExec_RunDLL \"properties,{result.Target}\"")
+        {
+            UseShellExecute = true
+        }, "无法打开属性窗口");
     }
 
     public static void OpenTerminal(LauncherResult result)
     {
-        var directory = result.Kind == LauncherResultKind.Folder ? result.Target : Path.GetDirectoryName(result.Target);
+        var directory = result.Kind == LauncherResultKind.Folder
+            ? result.Target
+            : Path.GetDirectoryName(result.Target);
         if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
-            return;
-        try
+            directory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        TryStart(new ProcessStartInfo
         {
-            var info = new ProcessStartInfo("wt.exe") { UseShellExecute = true };
-            info.ArgumentList.Add("-d");
-            info.ArgumentList.Add(directory);
-            Process.Start(info);
-        }
-        catch
-        {
-            var info = new ProcessStartInfo("powershell.exe") { UseShellExecute = true };
-            info.ArgumentList.Add("-NoExit");
-            info.ArgumentList.Add("-Command");
-            info.ArgumentList.Add("Set-Location -LiteralPath $args[0]");
-            info.ArgumentList.Add(directory);
-            TryStart(info, "无法打开终端");
-        }
+            FileName = "wt.exe",
+            WorkingDirectory = directory,
+            UseShellExecute = true
+        }, "无法打开 Windows Terminal");
     }
 
-    private static void TryStart(ProcessStartInfo info, string title)
+    private static void TryStart(ProcessStartInfo info, string errorTitle)
     {
         try { Process.Start(info); }
         catch (Exception exception)
         {
-            MessageBox.Show(exception.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show(exception.Message, "Luma · " + errorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }

@@ -25,6 +25,7 @@ public sealed class SettingsStore
         settings = settings.Copy().Normalize();
         AtomicFileService.WriteAllText(_path, JsonSerializer.Serialize(settings, JsonOptions));
         Current = settings.Copy();
+        UiStrings.SetCulture(Current.Language);
     }
 
     private AppSettings Load()
@@ -34,7 +35,7 @@ public sealed class SettingsStore
             var settings = File.Exists(_path)
                 ? JsonSerializer.Deserialize<AppSettings>(AtomicFileService.ReadAllText(_path)) ?? new AppSettings()
                 : new AppSettings();
-            if (settings.SchemaVersion > 1)
+            if (settings.SchemaVersion > 2)
             {
                 CompatibilityWarning = "配置来自更新版本的 Luma。当前使用临时默认值，禁止保存以保护原配置；请升级程序。";
                 return new AppSettings();

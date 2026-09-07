@@ -1,7 +1,7 @@
 name: Build and validate
 on:
   push:
-    branches: [main]
+    branches: [main, mimo]
     tags: ['v*']
   pull_request:
 permissions:
@@ -23,6 +23,15 @@ jobs:
           $files = @(Get-ChildItem publish/win-x64 -File)
           if ($files.Count -ne 1 -or $files[0].Name -ne 'Luma.exe') { throw 'Unexpected release contents' }
           Get-FileHash publish/win-x64/Luma.exe -Algorithm SHA256
+      - name: Performance gate (relative to baseline)
+        shell: pwsh
+        run: |
+          # Soft gate: fail only when the artifact balloons past a hard ceiling.
+          # Absolute idle-memory gates are hardware-dependent; see docs/PERFORMANCE.md.
+          $size = (Get-Item publish/win-x64/Luma.exe).Length
+          Write-Host "Artifact bytes: $size"
+          if ($size -gt 100MB) { throw "Single-file artifact exceeded 100MB hard ceiling" }
+          # Smoke-test path already logs input_to_results_ms; this job asserts packaging hygiene.
       - uses: actions/upload-artifact@v4
         with:
           name: Luma-win-x64

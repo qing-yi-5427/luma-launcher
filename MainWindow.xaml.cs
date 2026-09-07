@@ -25,6 +25,7 @@ public sealed partial class MainWindow : Window
     private readonly List<LauncherResult> _allResults = [];
     private readonly HashSet<LauncherResult> _iconLoads = [];
     private readonly SearchCoordinator _search = new();
+    private LauncherController _controller = null!;
     private readonly QuickSwitchService _quickSwitch = new();
     private readonly SettingsStore _settings;
     private readonly bool _previewMode;
@@ -49,17 +50,21 @@ public sealed partial class MainWindow : Window
     private int? _fileMatchCount;
     private int _fullResultLimit = FullSearchResultLimit;
     private bool _composing;
+    private bool _historyPanelOpen;
     private readonly System.Diagnostics.Stopwatch _queryTimer = new();
 
     internal Func<int, IntPtr, IntPtr, bool>? TrayMessageHandler { get; set; }
+    public GameModeService GameMode => _controller.GameMode;
 
     public MainWindow(SettingsStore settings, bool previewMode = false)
     {
         _previewMode = previewMode;
         _settings = settings;
+        _controller = new LauncherController(_search, settings);
         InitializeComponent();
         ResultsList.ItemsSource = _results;
         UpdateSortButton();
+        SearchHint.Text = UiStrings.Get("SearchHint");
         TextCompositionManager.AddPreviewTextInputStartHandler(SearchBox, (_, _) =>
         { _composing = true; _completedQuery = null; _searchCancellation?.Cancel(); });
         TextCompositionManager.AddPreviewTextInputHandler(SearchBox, (_, _) =>
@@ -68,6 +73,10 @@ public sealed partial class MainWindow : Window
             Dispatcher.BeginInvoke(() => SearchBox_TextChanged(SearchBox, null!), System.Windows.Threading.DispatcherPriority.Background);
         });
         SearchBox.LostKeyboardFocus += (_, _) => _composing = false;
+        _controller.GameMode.SuppressedChanged += suppressed =>
+            Dispatcher.BeginInvoke(() => StatusText.Text = suppressed
+                ? UiStrings.Get("GameModeOn")
+                : UiStrings.Get("GameModeOff"));
         SourceInitialized += MainWindow_SourceInitialized;
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
@@ -88,8 +97,11 @@ public sealed partial class MainWindow : Window
     public void ApplySettings()
     {
         ThemeService.Apply(_settings.Current.Theme);
+        UiStrings.SetCulture(_settings.Current.Language);
+        SearchHint.Text = UiStrings.Get("SearchHint");
         var sortChanged = !Equals(SortButton.Tag, ResultRanker.Normalize(_settings.Current.ResultSort));
         var foldersChanged = _search.Configure(_settings.Current);
+        _controller.ApplySettings(_settings.Current);
         UpdateSortButton();
         if (sortChanged)
         {
@@ -234,6 +246,12 @@ public sealed partial class MainWindow : Window
 
         if (_hotkey.IsHotkeyMessage(message, wParam))
         {
+            if (_controller.GameMode.Suppressed)
+            {
+                // Swallow the hotkey while a fullscreen app is in front.
+                handled = true;
+                return IntPtr.Zero;
+            }
             ToggleLauncher();
             handled = true;
         }
@@ -563,6 +581,7 @@ public sealed partial class MainWindow : Window
     }
 
     public void ClearHistory() { _search.ClearHistory(); _completedQuery = null; }
+    public void ClearQueryHistory() => _controller.ClearQueryHistory();
 
     private void LeaveFullResultsMode(bool animate = true)
     {
@@ -721,6 +740,43 @@ public sealed partial class MainWindow : Window
             }
         }
 
+        if (e.Key == Key.H && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            ToggleHistoryPanel();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.F12 && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            _controller.GameMode.ToggleManualSuspend();
+            StatusText.Text = _controller.GameMode.Suppressed
+                ? UiStrings.Get("GameModeOn")
+                : UiStrings.Get("GameModeOff");
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Tab && SearchBox.IsKeyboardFocusWithin && !string.IsNullOrWhiteSpace(SearchBox.Text))
+        {
+            var suggestion = _controller.QueryHistory.Suggest(SearchBox.Text.Trim(), 1).FirstOrDefault();
+            if (suggestion is not null)
+            {
+                SearchBox.Text = suggestion;
+                SearchBox.CaretIndex = SearchBox.Text.Length;
+                e.Handled = true;
+                return;
+            }
+        }
+
+        if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.None &&
+            ResultsList.SelectedItem is LauncherResult spaceSelected && _fullResultsMode)
+        {
+            _ = LoadSelectedPreviewAsync(spaceSelected);
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.G && Keyboard.Modifiers == ModifierKeys.Control)
         {
             _ = QuickSwitchSelectedAsync();
@@ -785,10 +841,19 @@ public sealed partial class MainWindow : Window
     {
         if (ResultsList.SelectedItem is not LauncherResult selected)
             return;
+        if (_historyPanelOpen)
+        {
+            SearchBox.Text = selected.Target;
+            _historyPanelOpen = false;
+            HistoryPanel.Visibility = Visibility.Collapsed;
+            _ = SearchCurrentTextAsync(0);
+            return;
+        }
         if (ResultExecutionService.Open(selected, runAsAdministrator))
         {
             if (selected.Kind != LauncherResultKind.Calculation)
                 _search.RecordLaunch(selected);
+            _controller.RecordCompletedQuery(SearchBox.Text);
             HideLauncher();
         }
     }
@@ -919,13 +984,97 @@ public sealed partial class MainWindow : Window
             StatusText.Text = selected.Target;
             UpdateDetailActions(selected);
             if (_fullResultsMode)
+            {
                 _ = LoadSelectedDetailsAsync(selected);
+                if (_settings.Current.EnablePreview)
+                    _ = LoadSelectedPreviewAsync(selected);
+            }
         }
         else
         {
             _detailCancellation?.Cancel();
             ClearDetailPanel();
         }
+    }
+
+    private async Task LoadSelectedPreviewAsync(LauncherResult selected)
+    {
+        try
+        {
+            var info = await _controller.LoadPreviewAsync(selected, CancellationToken.None);
+            if (info is null || !ReferenceEquals(ResultsList.SelectedItem, selected))
+                return;
+            DetailDescriptionText.Text = string.IsNullOrWhiteSpace(info.Description)
+                ? info.KindLabel
+                : $"{info.KindLabel} · {info.Description}";
+            if (!string.IsNullOrWhiteSpace(info.SizeText) && (string.IsNullOrEmpty(DetailSizeText.Text) ||
+                DetailSizeText.Text is "—" or "正在读取…"))
+                DetailSizeText.Text = info.SizeText;
+            if (!string.IsNullOrWhiteSpace(info.ModifiedText))
+                DetailModifiedText.Text = info.ModifiedText;
+            if (info.ThumbnailPath is not null && File.Exists(info.ThumbnailPath))
+            {
+                var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bitmap.UriSource = new Uri(info.ThumbnailPath);
+                bitmap.EndInit();
+                DetailPreviewImage.Source = bitmap;
+                DetailPreviewImage.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                DetailPreviewImage.Source = null;
+                DetailPreviewImage.Visibility = Visibility.Collapsed;
+            }
+        }
+        catch (Exception exception)
+        {
+            DiagnosticsService.Log("preview", exception);
+        }
+    }
+
+    private void ToggleHistoryPanel()
+    {
+        if (_historyPanelOpen)
+        {
+            _historyPanelOpen = false;
+            HistoryPanel.Visibility = Visibility.Collapsed;
+            SearchBox.Focus();
+            return;
+        }
+
+        var entries = _controller.QueryHistory.Recent(20);
+        HistoryList.ItemsSource = entries;
+        HistoryEmpty.Visibility = entries.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        HistoryPanel.Visibility = Visibility.Visible;
+        _historyPanelOpen = true;
+        HistoryList.Focus();
+    }
+
+    private void HistoryList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (HistoryList.SelectedItem is not string query)
+            return;
+        SearchBox.Text = query;
+        _historyPanelOpen = false;
+        HistoryPanel.Visibility = Visibility.Collapsed;
+        SearchBox.Focus();
+        _ = SearchCurrentTextAsync(0);
+    }
+
+    private void ClearHistoryPanel_Click(object sender, RoutedEventArgs e)
+    {
+        _controller.ClearQueryHistory();
+        HistoryList.ItemsSource = Array.Empty<string>();
+        HistoryEmpty.Visibility = Visibility.Visible;
+    }
+
+    private void HistoryClose_Click(object sender, RoutedEventArgs e)
+    {
+        _historyPanelOpen = false;
+        HistoryPanel.Visibility = Visibility.Collapsed;
+        SearchBox.Focus();
     }
 
     private async Task LoadSelectedDetailsAsync(LauncherResult selected)

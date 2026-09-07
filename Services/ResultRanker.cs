@@ -54,7 +54,10 @@ internal static class ResultRanker
             SizeAscending or SizeDescending or ModifiedNewest or ModifiedOldest => candidates
                 .OrderBy(result => result.ProviderOrder.HasValue ? 0 : 1).ThenBy(result => result.ProviderOrder)
                 .ThenBy(result => result.Title, StringComparer.CurrentCultureIgnoreCase),
-            _ => candidates.OrderByDescending(result => result.Score)
+            // Smart mode uses combined Score (already includes usage). A small intent bias
+            // promotes calculator/system/window results without rewriting file-vs-app order.
+            _ => candidates
+                .OrderByDescending(result => result.Score + KindBias(result.Kind))
         };
         return ordered.ThenBy(result => result.Title.Length)
             .ThenBy(result => result.Title, StringComparer.CurrentCultureIgnoreCase)
@@ -63,4 +66,12 @@ internal static class ResultRanker
 
     private static double RelevanceOf(LauncherResult result, Func<string, double> getUsageBoost) =>
         result.Score - getUsageBoost(result.Target);
+
+    private static double KindBias(LauncherResultKind kind) => kind switch
+    {
+        LauncherResultKind.Calculation => 80,
+        LauncherResultKind.System => 60,
+        LauncherResultKind.Window => 40,
+        _ => 0
+    };
 }

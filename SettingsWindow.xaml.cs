@@ -31,7 +31,8 @@ public sealed partial class SettingsWindow : Window
     {
         settings.Normalize();
         _webSearchUrl = settings.WebSearchUrl;
-        HotkeyBox.SelectedValue = settings.Hotkey;
+        HotkeyBox.Text = settings.Hotkey;
+        LanguageBox.SelectedValue = settings.Language;
         ThemeBox.SelectedValue = settings.Theme;
         StartupBox.IsChecked = settings.StartWithWindows;
         EverythingModeBox.SelectedValue = settings.EverythingPathMode.Equals("Manual", StringComparison.OrdinalIgnoreCase)
@@ -42,11 +43,19 @@ public sealed partial class SettingsWindow : Window
             ? "Connect"
             : "Managed";
         QuickSwitchBox.IsChecked = settings.EnableQuickSwitch;
+        WindowSwitcherBox.IsChecked = settings.EnableWindowSwitcher;
+        SystemCommandsBox.IsChecked = settings.EnableSystemCommands;
+        BookmarksBox.IsChecked = settings.EnableBookmarks;
+        GameModeBox.IsChecked = settings.EnableGameMode;
+        PreviewBox.IsChecked = settings.EnablePreview;
+        WindowsIndexBox.IsChecked = settings.PreferWindowsIndex;
         HistoryBox.IsChecked = settings.RecordHistory;
+        QueryHistoryBox.IsChecked = settings.RecordQueryHistory;
         ResultSortBox.SelectedValue = ResultRanker.Normalize(settings.ResultSort);
         AliasesBox.Text = settings.Aliases;
         AppFoldersBox.Text = settings.AppFolders;
         CommandsBox.Text = settings.CustomCommands;
+        EnginesBox.Text = settings.SearchEngines;
         UpdateEverythingControls();
     }
 
@@ -67,19 +76,37 @@ public sealed partial class SettingsWindow : Window
             return;
         }
 
+        var hotkey = HotkeyBox.Text.Trim();
+        if (!HotkeyGesture.TryParse(hotkey, out _))
+        {
+            EverythingPathHint.Text = "快捷键格式无效。示例：Alt+E、Ctrl+Shift+F12、Win+Space。";
+            EverythingPathHint.SetResourceReference(ForegroundProperty, "AccentBrush");
+            HotkeyBox.Focus();
+            return;
+        }
+
         var settings = new AppSettings
         {
-            Hotkey = HotkeyBox.SelectedValue as string ?? "Alt+Space",
+            Hotkey = hotkey,
             Theme = ThemeBox.SelectedValue as string ?? "System",
             StartWithWindows = StartupBox.IsChecked == true,
             EverythingPathMode = everythingMode,
             EverythingPath = everythingPath,
             EverythingLifecycle = EverythingLifecycleBox.SelectedValue as string ?? "Managed",
             EnableQuickSwitch = QuickSwitchBox.IsChecked == true,
+            EnableWindowSwitcher = WindowSwitcherBox.IsChecked == true,
+            EnableSystemCommands = SystemCommandsBox.IsChecked == true,
+            EnableBookmarks = BookmarksBox.IsChecked == true,
+            EnableGameMode = GameModeBox.IsChecked == true,
+            EnablePreview = PreviewBox.IsChecked == true,
+            PreferWindowsIndex = WindowsIndexBox.IsChecked == true,
             RecordHistory = HistoryBox.IsChecked == true,
+            RecordQueryHistory = QueryHistoryBox.IsChecked == true,
+            Language = LanguageBox.SelectedValue as string ?? "zh-CN",
             Aliases = AliasesBox.Text.Trim(),
             AppFolders = AppFoldersBox.Text.Trim(),
             CustomCommands = CommandsBox.Text.Trim(),
+            SearchEngines = EnginesBox.Text.Trim(),
             WebSearchUrl = _webSearchUrl,
             ResultSort = ResultSortBox.SelectedValue as string ?? ResultRanker.Smart
         };
@@ -193,6 +220,39 @@ public sealed partial class SettingsWindow : Window
     {
         try { ClearHistoryRequested?.Invoke(); PrivacyStatusText.Text = "使用历史已清空，收藏已保留。"; }
         catch (Exception exception) { PrivacyStatusText.Text = "清空失败：" + exception.Message; }
+    }
+
+    public event Action? ClearQueryHistoryRequested;
+
+    private void ClearQueryHistory_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            ClearQueryHistoryRequested?.Invoke();
+            PrivacyStatusText.Text = "搜索词历史已清空。";
+        }
+        catch (Exception exception) { PrivacyStatusText.Text = "清空失败：" + exception.Message; }
+    }
+
+    private void HotkeyPreset_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (HotkeyPresetBox?.SelectedValue is string preset && preset.Length > 0 && HotkeyBox is not null)
+            HotkeyBox.Text = preset;
+    }
+
+    private async void DownloadUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateStatusText.Text = "正在下载并校验…";
+        try
+        {
+            UpdateStatusText.Text = await UpdateService.DownloadAndStageAsync(_lifetime.Token);
+        }
+        catch (OperationCanceledException) { UpdateStatusText.Text = "下载已取消或超时，可重试。"; }
+        catch (Exception exception)
+        {
+            DiagnosticsService.Log("update-download", exception);
+            UpdateStatusText.Text = "下载失败，请打开下载页手动替换。";
+        }
     }
 
     private void ExportSettings_Click(object sender, RoutedEventArgs e)

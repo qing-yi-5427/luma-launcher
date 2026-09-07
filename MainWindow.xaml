@@ -173,6 +173,25 @@
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
+                        <Border x:Name="HistoryPanel" Visibility="Collapsed" Margin="0,8,0,0"
+                                Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource StrokeBrush}"
+                                BorderThickness="1" CornerRadius="10" Padding="12,10">
+                            <DockPanel>
+                                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8" LastChildFill="True">
+                                    <Button DockPanel.Dock="Right" Content="清空" Style="{StaticResource FilterButton}"
+                                            Margin="6,0,0,0" Click="ClearHistoryPanel_Click"/>
+                                    <Button DockPanel.Dock="Right" Content="关闭" Style="{StaticResource FilterButton}"
+                                            Click="HistoryClose_Click"/>
+                                    <TextBlock Text="搜索历史 · Ctrl+H" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource AccentBrush}" VerticalAlignment="Center"/>
+                                </DockPanel>
+                                <TextBlock x:Name="HistoryEmpty" Text="还没有搜索历史" Foreground="{DynamicResource MutedTextBrush}"
+                                           FontSize="12" Visibility="Collapsed"/>
+                                <ListBox x:Name="HistoryList" Background="Transparent" BorderThickness="0" MaxHeight="220"
+                                         MouseDoubleClick="HistoryList_MouseDoubleClick"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+                            </DockPanel>
+                        </Border>
                     </Grid>
 
                     <Border x:Name="DetailsDivider" Grid.Column="1" Width="1" Margin="10,4"
@@ -209,6 +228,10 @@
                             </Grid>
 
                             <Border Height="1" Margin="0,18,0,17" Background="{DynamicResource StrokeBrush}"/>
+
+                            <Image x:Name="DetailPreviewImage" MaxHeight="160" Margin="0,0,0,14"
+                                   Stretch="Uniform" Visibility="Collapsed"
+                                   HorizontalAlignment="Center"/>
 
                             <TextBlock Text="位置" FontSize="11.5" Foreground="{DynamicResource FaintTextBrush}"/>
                             <Border Margin="0,6,0,16" Padding="10,8" CornerRadius="7"
@@ -267,6 +290,7 @@
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                         <TextBlock Text="↵ 打开" FontSize="11.5" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,15,0"/>
                         <TextBlock Text="⌃↵ 定位" FontSize="11.5" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,15,0"/>
+                        <TextBlock Text="⌃H 历史" FontSize="11.5" Foreground="{DynamicResource FaintTextBrush}" Margin="0,0,15,0"/>
                         <TextBlock x:Name="QuickSwitchHint" Text="⌃G 快速切换" FontSize="11.5"
                                    Foreground="{DynamicResource AccentBrush}" Margin="0,0,15,0" Visibility="Collapsed"/>
                         <Button x:Name="MoreButton" Content="展开结果" Style="{StaticResource FilterButton}"

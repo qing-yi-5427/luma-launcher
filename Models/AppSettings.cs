@@ -2,7 +2,7 @@ namespace LumaLauncher.Models;
 
 public sealed class AppSettings
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
     public bool RecordHistory { get; set; } = true;
     public string Hotkey { get; set; } = "Alt+Space";
     public string Theme { get; set; } = "System";
@@ -16,6 +16,17 @@ public sealed class AppSettings
     public string CustomCommands { get; set; } = string.Empty;
     public string WebSearchUrl { get; set; } = "https://www.bing.com/search?q={query}";
     public string ResultSort { get; set; } = "Smart";
+
+    // Schema v2
+    public string SearchEngines { get; set; } = string.Empty;
+    public bool EnableWindowSwitcher { get; set; } = true;
+    public bool EnableSystemCommands { get; set; } = true;
+    public bool EnableBookmarks { get; set; } = true;
+    public bool EnableGameMode { get; set; }
+    public bool EnablePreview { get; set; } = true;
+    public bool PreferWindowsIndex { get; set; }
+    public string Language { get; set; } = "zh-CN";
+    public bool RecordQueryHistory { get; set; } = true;
 
     public AppSettings Copy() => new()
     {
@@ -32,14 +43,29 @@ public sealed class AppSettings
         AppFolders = AppFolders,
         CustomCommands = CustomCommands,
         WebSearchUrl = WebSearchUrl,
-        ResultSort = ResultSort
+        ResultSort = ResultSort,
+        SearchEngines = SearchEngines,
+        EnableWindowSwitcher = EnableWindowSwitcher,
+        EnableSystemCommands = EnableSystemCommands,
+        EnableBookmarks = EnableBookmarks,
+        EnableGameMode = EnableGameMode,
+        EnablePreview = EnablePreview,
+        PreferWindowsIndex = PreferWindowsIndex,
+        Language = Language,
+        RecordQueryHistory = RecordQueryHistory
     };
 
     public AppSettings Normalize()
     {
-        if (SchemaVersion > 1) throw new InvalidDataException("此配置来自更新版本的 Luma，请先升级程序。");
-        SchemaVersion = 1;
-        if (!new[] { "Alt+Space", "Ctrl+Space", "Ctrl+Alt+Space", "Ctrl+Shift+Space" }.Contains(Hotkey)) Hotkey = "Alt+Space";
+        if (SchemaVersion > 2) throw new InvalidDataException("此配置来自更新版本的 Luma，请先升级程序。");
+        if (SchemaVersion < 2)
+        {
+            // v1 files load with defaults for the new fields.
+            SchemaVersion = 2;
+        }
+
+        if (string.IsNullOrWhiteSpace(Hotkey) || !Services.HotkeyGesture.TryParse(Hotkey, out _))
+            Hotkey = "Alt+Space";
         if (!new[] { "System", "Light", "Dark", "Win11Blue", "Win11Graphite", "Win11Mist", "Win11Sage" }.Contains(Theme)) Theme = "System";
         EverythingPathMode = EverythingPathMode == "Manual" ? "Manual" : "Auto";
         EverythingLifecycle = EverythingLifecycle == "Connect" ? "Connect" : "Managed";
@@ -47,6 +73,8 @@ public sealed class AppSettings
         Aliases ??= string.Empty;
         AppFolders ??= string.Empty;
         CustomCommands ??= string.Empty;
+        SearchEngines ??= string.Empty;
+        Language = Language.StartsWith("en", StringComparison.OrdinalIgnoreCase) ? "en-US" : "zh-CN";
         ResultSort = Services.ResultRanker.Normalize(ResultSort);
         if (string.IsNullOrWhiteSpace(WebSearchUrl) || !WebSearchUrl.Contains("{query}") ||
             !Uri.TryCreate(WebSearchUrl.Replace("{query}", "test"), UriKind.Absolute, out var uri) ||

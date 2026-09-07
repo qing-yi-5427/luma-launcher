@@ -168,14 +168,9 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <DockPanel Grid.Column="0" LastChildFill="True">
-                    <TextBox x:Name="SettingsSearchBox" DockPanel.Dock="Top" Margin="0,0,0,8"
-                             Height="30" FontSize="12" Padding="8,4"
-                             TextChanged="SettingsSearchBox_TextChanged"
-                             ToolTip="筛选设置分区"/>
-                    <ListBox x:Name="SettingsNav" Background="Transparent" BorderThickness="0"
-                             SelectedIndex="0" SelectionChanged="SettingsNav_SelectionChanged"
-                             ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                <ListBox x:Name="SettingsNav" Grid.Column="0" Background="Transparent" BorderThickness="0"
+                         SelectedIndex="0" SelectionChanged="SettingsNav_SelectionChanged"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="12,10"/>
@@ -209,8 +204,7 @@
                     <ListBoxItem Content="能力" Tag="Features"/>
                     <ListBoxItem Content="隐私" Tag="Privacy"/>
                     <ListBoxItem Content="关于" Tag="About"/>
-                    </ListBox>
-                </DockPanel>
+                </ListBox>
 
                 <ScrollViewer x:Name="SettingsScroll" Grid.Column="2" VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">

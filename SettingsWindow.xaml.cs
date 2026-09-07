@@ -28,38 +28,6 @@ public sealed partial class SettingsWindow : Window
         ShowSection("General");
     }
 
-    private void SettingsSearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    {
-        if (SettingsNav is null)
-            return;
-        var q = (SettingsSearchBox.Text ?? string.Empty).Trim();
-        if (q.Length == 0)
-        {
-            foreach (System.Windows.Controls.ListBoxItem item in SettingsNav.Items)
-                item.Visibility = Visibility.Visible;
-            return;
-        }
-        var map = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["General"] = ["快捷键", "hotkey", "语言", "language", "密度", "density", "启动", "startup", "位置", "position"],
-            ["Appearance"] = ["主题", "theme", "外观", "墨青", "赭暮", "素笺", "晴空", "日夜"],
-            ["Search"] = ["排序", "sort", "别名", "alias", "命令", "command", "引擎", "engine", "目录", "folder"],
-            ["Sources"] = ["everything", "索引", "index", "windows", "数据源"],
-            ["Features"] = ["窗口", "window", "系统", "system", "书签", "bookmark", "游戏", "game", "预览", "preview", "快速切换"],
-            ["Privacy"] = ["历史", "history", "剪贴板", "clipboard", "隐私", "导入", "导出"],
-            ["About"] = ["更新", "update", "版本", "version", "许可", "license"]
-        };
-        foreach (System.Windows.Controls.ListBoxItem item in SettingsNav.Items)
-        {
-            var tag = item.Tag as string ?? string.Empty;
-            var visible = map.TryGetValue(tag, out var keys) &&
-                          keys.Any(k => k.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                                        q.Contains(k, StringComparison.OrdinalIgnoreCase)) ||
-                          (item.Content as string ?? string.Empty).Contains(q, StringComparison.OrdinalIgnoreCase);
-            item.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        }
-    }
-
     private void SettingsNav_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         if (SettingsNav?.SelectedItem is System.Windows.Controls.ListBoxItem { Tag: string tag })

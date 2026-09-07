@@ -13,7 +13,7 @@
         Deactivated="Window_Deactivated" PreviewKeyDown="Window_PreviewKeyDown"
         MouseLeftButtonDown="Window_MouseLeftButtonDown">
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" CornerRadius="16" GlassFrameThickness="0" ResizeBorderThickness="0" UseAeroCaptionButtons="False"/>
+        <shell:WindowChrome CaptionHeight="0" CornerRadius="8" GlassFrameThickness="0" ResizeBorderThickness="0" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
@@ -63,7 +63,7 @@
     </Window.Resources>
 
     <Border Background="{DynamicResource WindowBrush}" BorderBrush="{DynamicResource StrokeBrush}"
-            BorderThickness="1" CornerRadius="16" ClipToBounds="True">
+            BorderThickness="1" CornerRadius="8" ClipToBounds="True">
         <Border.RenderTransform>
             <TranslateTransform x:Name="WindowTranslate"/>
         </Border.RenderTransform>

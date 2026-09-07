@@ -383,9 +383,9 @@ public sealed partial class SettingsWindow : Window
     private void ApplyDwmStyling()
     {
         var handle = new WindowInteropHelper(this).Handle;
-        var rounded = 2;
-        NativeMethods.DwmSetWindowAttribute(handle, 33, ref rounded, sizeof(int));
-        var backdrop = 2;
+        var corner = 3; // DWMWCP_ROUNDSMALL — matches Border CornerRadius 8
+        NativeMethods.DwmSetWindowAttribute(handle, 33, ref corner, sizeof(int));
+        var backdrop = 0; // DWMSBT_NONE — avoid square backdrop under rounded Border
         NativeMethods.DwmSetWindowAttribute(handle, 38, ref backdrop, sizeof(int));
     }
 }

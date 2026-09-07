@@ -8,7 +8,7 @@
         TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"
         UseLayoutRounding="True" SnapsToDevicePixels="True">
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" CornerRadius="12" GlassFrameThickness="0" ResizeBorderThickness="0"/>
+        <shell:WindowChrome CaptionHeight="0" CornerRadius="8" GlassFrameThickness="0" ResizeBorderThickness="0"/>
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
@@ -144,8 +144,8 @@
         </Style>
     </Window.Resources>
 
-    <Border CornerRadius="16" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1"
-            Background="{DynamicResource WindowBrush}">
+    <Border CornerRadius="8" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1"
+            Background="{DynamicResource WindowBrush}" ClipToBounds="True">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="64"/>

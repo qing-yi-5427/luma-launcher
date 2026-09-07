@@ -11,6 +11,8 @@ public sealed class IconService
     private const uint ShgfiIcon = 0x000000100;
     private const uint ShgfiSmallIcon = 0x000000001;
     private const int MaximumCacheEntries = 192;
+    internal const int MaximumPendingLoads = 32;
+    internal Func<string, ImageSource?>? TestLoadIcon { get; set; }
 
     private sealed record CacheEntry(ImageSource? Image, LinkedListNode<string> Node);
 
@@ -35,7 +37,11 @@ public sealed class IconService
 
             if (!_inflight.TryGetValue(target, out loadTask!))
             {
-                loadTask = LoadAndCacheAsync(target);
+                // Native shell handlers cannot always be cancelled. Bound queued
+                // work too, not just decoder concurrency, during rapid scrolling.
+                // A skipped icon retains its glyph and can retry on the next bind.
+                if (_inflight.Count >= MaximumPendingLoads) return null;
+                loadTask = Task.Run(() => LoadAndCacheAsync(target));
                 _inflight[target] = loadTask;
             }
         }
@@ -56,6 +62,11 @@ public sealed class IconService
         }
     }
 
+    internal int PendingCount
+    {
+        get { lock (_sync) return _inflight.Count; }
+    }
+
     internal int CachedCount
     {
         get { lock (_sync) return _cache.Count; }
@@ -67,7 +78,7 @@ public sealed class IconService
         try
         {
             await _loadSlots.WaitAsync().ConfigureAwait(false);
-            try { icon = await Task.Run(() => GetIcon(target)).ConfigureAwait(false); }
+            try { icon = await Task.Run(() => TestLoadIcon is { } load ? load(target) : GetIcon(target)).ConfigureAwait(false); }
             finally { _loadSlots.Release(); }
             return icon;
         }

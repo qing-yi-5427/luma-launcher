@@ -1,0 +1,56 @@
+{
+  "label": "mimo",
+  "runtime": "10.0.11",
+  "frameworkDependent": true,
+  "visibleWindow": false,
+  "forcedGc": false,
+  "cycles": 60,
+  "inputToFinalP95Ms": 140.47,
+  "samples": [
+    {
+      "stage": "initialized-hidden",
+      "workingSetMiB": 90.37,
+      "privateMiB": 97.19,
+      "gcHeapAfterLastCollectionMiB": 0,
+      "handles": 460,
+      "threads": 20,
+      "idleCpuMsOver3s": 31.25
+    },
+    {
+      "stage": "after-20-cycles",
+      "workingSetMiB": 213.16,
+      "privateMiB": 179.54,
+      "gcHeapAfterLastCollectionMiB": 25.99,
+      "handles": 1003,
+      "threads": 48,
+      "idleCpuMsOver3s": 0
+    },
+    {
+      "stage": "after-40-cycles",
+      "workingSetMiB": 220.26,
+      "privateMiB": 181.7,
+      "gcHeapAfterLastCollectionMiB": 30.07,
+      "handles": 1148,
+      "threads": 50,
+      "idleCpuMsOver3s": 0
+    },
+    {
+      "stage": "after-60-cycles",
+      "workingSetMiB": 221.73,
+      "privateMiB": 181.87,
+      "gcHeapAfterLastCollectionMiB": 31.57,
+      "handles": 1162,
+      "threads": 49,
+      "idleCpuMsOver3s": 15.62
+    },
+    {
+      "stage": "settled-30s",
+      "workingSetMiB": 221.48,
+      "privateMiB": 181.57,
+      "gcHeapAfterLastCollectionMiB": 31.57,
+      "handles": 1149,
+      "threads": 43,
+      "idleCpuMsOver3s": 0
+    }
+  ]
+}

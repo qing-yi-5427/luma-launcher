@@ -20,11 +20,13 @@ public sealed partial class MainWindow : Window
     private const int PageSize = 8;
     private const int QuickSearchResultLimit = 64;
     private const int FullSearchResultLimit = 512;
-    private const int SearchDebounceMilliseconds = 250;
+    private const int SearchDebounceMilliseconds = SearchCoordinator.FileDebounceMilliseconds;
     private readonly ObservableCollection<LauncherResult> _results = [];
     private readonly List<LauncherResult> _allResults = [];
     private readonly HashSet<LauncherResult> _iconLoads = [];
-    private readonly SearchCoordinator _search = new();
+    private readonly SearchCoordinator _search;
+    private bool _executingQuery;
+    internal Action<LauncherResult>? TestExecute { get; set; }
     private LauncherController _controller = null!;
     private readonly QuickSwitchService _quickSwitch = new();
     private readonly SettingsStore _settings;
@@ -64,7 +66,11 @@ public sealed partial class MainWindow : Window
     public GameModeService GameMode => _controller.GameMode;
 
     public MainWindow(SettingsStore settings, bool previewMode = false)
+        : this(settings, previewMode, new SearchCoordinator()) { }
+
+    internal MainWindow(SettingsStore settings, bool previewMode, SearchCoordinator search)
     {
+        _search = search;
         _previewMode = previewMode;
         _settings = settings;
         _controller = new LauncherController(_search, settings);
@@ -73,11 +79,21 @@ public sealed partial class MainWindow : Window
         UpdateSortButton();
         SearchHint.Text = UiStrings.Get("SearchHint");
         TextCompositionManager.AddPreviewTextInputStartHandler(SearchBox, (_, _) =>
-        { _composing = true; _completedQuery = null; _searchCancellation?.Cancel(); });
+        {
+            _composing = true;
+            _completedQuery = null;
+            _searchCancellation?.Cancel();
+            Interlocked.Increment(ref _searchGeneration);
+            SetSearchPending(true);
+        });
         TextCompositionManager.AddPreviewTextInputHandler(SearchBox, (_, _) =>
         {
+            var wasComposing = _composing;
             _composing = false;
-            Dispatcher.BeginInvoke(() => SearchBox_TextChanged(SearchBox, null!), System.Windows.Threading.DispatcherPriority.Background);
+            // Ordinary text already raises TextChanged. Only composition commit
+            // needs a deferred query, after the final text has reached the box.
+            if (wasComposing)
+                Dispatcher.BeginInvoke(() => SearchBox_TextChanged(SearchBox, null!), System.Windows.Threading.DispatcherPriority.Background);
         });
         SearchBox.LostKeyboardFocus += (_, _) => _composing = false;
         _controller.GameMode.SuppressedChanged += suppressed =>
@@ -202,8 +218,10 @@ public sealed partial class MainWindow : Window
     public void HideLauncher()
     {
         _previewCancellation?.Cancel();
+        _detailCancellation?.Cancel();
         _composing = false;
         _searchCancellation?.Cancel();
+        Interlocked.Increment(ref _searchGeneration);
         if (HelpOverlay is not null)
             HelpOverlay.Visibility = Visibility.Collapsed;
         _helpOpen = false;
@@ -289,7 +307,8 @@ public sealed partial class MainWindow : Window
         _ = SearchCurrentTextAsync(SearchDebounceMilliseconds);
     }
 
-    private async Task<bool> SearchCurrentTextAsync(int delayMilliseconds, bool preserveResults = false)
+    private async Task<bool> SearchCurrentTextAsync(int delayMilliseconds, bool preserveResults = false,
+        Action? firstActionable = null)
     {
         _searchCancellation?.Cancel();
         _searchCancellation?.Dispose();
@@ -311,7 +330,7 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            await Task.Delay(delayMilliseconds, token);
+            // File debounce is owned by the coordinator; apps and tools start now.
             if (generation != _searchGeneration || !pendingQuery.Equals(SearchBox.Text.Trim(), StringComparison.Ordinal))
                 return false;
 
@@ -337,7 +356,8 @@ public sealed partial class MainWindow : Window
                     ApplyBatch(partial, "正在补充搜索结果…", publishedPartial);
                     publishedPartial = true;
                     SetSearchPending(false);
-                }));
+                    firstActionable?.Invoke();
+                }), fileDelayMilliseconds: delayMilliseconds);
             if (generation != _searchGeneration || !pendingQuery.Equals(SearchBox.Text.Trim(), StringComparison.Ordinal))
                 return false;
             if (token.IsCancellationRequested) return false;
@@ -346,10 +366,11 @@ public sealed partial class MainWindow : Window
             ApplyBatch(batch, "没有找到匹配项", preserveResults || publishedPartial);
             return true;
         }
-        catch (OperationCanceledException) { SetProgressVisible(false); return false; }
-        catch (Exception exception) when (generation == _searchGeneration)
+        catch (OperationCanceledException) { return false; }
+        catch (Exception exception)
         {
             DiagnosticsService.Log("search", exception);
+            if (generation != _searchGeneration) return false;
             ApplyBatch(new SearchBatch([], "搜索暂时不可用", false), "搜索暂时不可用，请稍后重试");
             SetProgressVisible(false);
             SetExpanded(0, showBody: true);
@@ -405,7 +426,7 @@ public sealed partial class MainWindow : Window
         ApplyCurrentPage(emptyMessage);
         if (selection is not null)
             ResultsList.SelectedItem = _results.FirstOrDefault(item => item.Target == selection) ?? _results.FirstOrDefault();
-        if (_queryTimer.IsRunning)
+        if (_queryTimer.IsRunning && batch.Results.Count > 0)
         {
             _queryTimer.Stop();
             DiagnosticsService.Log("first-results", $"input_to_results_ms={_queryTimer.ElapsedMilliseconds}; items={batch.Results.Count}");
@@ -917,12 +938,32 @@ public sealed partial class MainWindow : Window
 
     private async Task SearchAndExecuteAsync(ModifierKeys modifiers)
     {
-        if (await SearchCurrentTextAsync(delayMilliseconds: 0))
+        if (_executingQuery) return;
+        _executingQuery = true;
+        var executed = false;
+        void ExecuteOnce()
+        {
+            if (executed || _composing || ResultsList.SelectedItem is not LauncherResult) return;
+            executed = true;
             ExecuteSelected(modifiers);
+        }
+        try
+        {
+            if (await SearchCurrentTextAsync(delayMilliseconds: 0, firstActionable: ExecuteOnce))
+                ExecuteOnce();
+        }
+        finally { _executingQuery = false; }
     }
 
     private void ExecuteSelected(ModifierKeys modifiers)
     {
+        if (_searchPending || _composing) return;
+        if (TestExecute is { } execute && ResultsList.SelectedItem is LauncherResult selected)
+        {
+            execute(selected);
+            HideLauncher();
+            return;
+        }
         if (modifiers.HasFlag(ModifierKeys.Control) && modifiers.HasFlag(ModifierKeys.Shift))
             OpenSelected(runAsAdministrator: true);
         else if (modifiers.HasFlag(ModifierKeys.Control))

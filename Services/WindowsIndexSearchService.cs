@@ -12,13 +12,21 @@ namespace LumaLauncher.Services;
 public sealed class WindowsIndexSearchService
 {
     private const string ConnectionString = "Provider=Search.CollatorDSO;Extended Properties='Application=Windows';";
+    private readonly SemaphoreSlim _querySlot = new(1, 1);
 
     public async Task<EverythingSearchResponse> SearchAsync(string query, int maximumResults, string filter, CancellationToken token, string sortMode = "Smart")
     {
         if (string.IsNullOrWhiteSpace(query))
             return new EverythingSearchResponse([], true, UiStrings.Get("WindowsIndex"));
 
-        return await Task.Run(() => SearchCore(query, maximumResults, filter, token, sortMode), token).ConfigureAwait(false);
+        // Cancellation cannot interrupt connection.Execute in all COM providers.
+        // Keep one active native call; obsolete queued queries cancel before COM.
+        await _querySlot.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            return await Task.Run(() => SearchCore(query, maximumResults, filter, token, sortMode), token).ConfigureAwait(false);
+        }
+        finally { _querySlot.Release(); }
     }
 
     public static bool IsAvailable()

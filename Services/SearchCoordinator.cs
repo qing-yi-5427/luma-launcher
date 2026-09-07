@@ -15,7 +15,6 @@ public sealed class SearchCoordinator : IDisposable
     private readonly IconService _icons = new();
     private readonly UsageStore _usage = new();
     private readonly PreviewService _preview = new();
-    private readonly List<ILumaProvider> _providers;
     private IReadOnlyDictionary<string, string> _aliases = new Dictionary<string, string>();
     private string _resultSort = ResultRanker.Smart;
     private bool _recordHistory = true;
@@ -35,9 +34,18 @@ public sealed class SearchCoordinator : IDisposable
         finally { slot.Release(); }
     }
 
-    public SearchCoordinator()
+    public SearchCoordinator() { }
+
+    // Applied only to typed file queries, never local apps/tools or explicit Enter.
+    internal const int FileDebounceMilliseconds = 100;
+    internal Func<ProviderContext, CancellationToken, Task<IReadOnlyList<LauncherResult>>>? TestApplicationQuery { get; set; }
+
+    private async Task<EverythingSearchResponse> QueryFilesAsync(ProviderContext context, int delay, CancellationToken token)
     {
-        _providers = [_builtIns, _system, _apps, _windows, _files, _bookmarks];
+        if (context.Filter != "Application" && delay > 0)
+            await Task.Delay(delay, token).ConfigureAwait(false);
+        token.ThrowIfCancellationRequested();
+        return await _files.QueryBatchAsync(context, token).ConfigureAwait(false);
     }
 
     internal SearchCoordinator(Func<string, int, CancellationToken, string, string, Task<EverythingSearchResponse>> queryFiles,
@@ -84,7 +92,7 @@ public sealed class SearchCoordinator : IDisposable
         await _apps.ReloadAsync(token).ConfigureAwait(false);
 
     public async Task<SearchBatch> SearchAsync(string query, int maximumResults, CancellationToken token,
-        string filter = "All", Action<SearchBatch>? publishApplications = null)
+        string filter = "All", Action<SearchBatch>? publishApplications = null, int fileDelayMilliseconds = 0)
     {
         token.ThrowIfCancellationRequested();
         var sortMode = _resultSort;
@@ -125,18 +133,21 @@ public sealed class SearchCoordinator : IDisposable
             !ResultRanker.IsProviderSort(sortMode) && !LooksLikeEverythingSyntax(trimmed)
                 ? _usage.Search(trimmed, filter, token) : [], token);
 
-        var appTask = _apps.QueryAsync(context, token);
+        var appTask = TestApplicationQuery is { } appQuery ? appQuery(context, token) : _apps.QueryAsync(context, token);
         using var optionalCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
         var windowTask = QueryOptionalAsync(_windowSlot, t => _windows.QueryAsync(context, t), optionalCancellation.Token);
         var bookmarkTask = QueryOptionalAsync(_bookmarkSlot, t => TestOptionalQuery is { } query ? query(context, t) : _bookmarks.QueryAsync(context, t), optionalCancellation.Token);
         try
         {
-            var fileTask = _files.QueryBatchAsync(context, token);
+            var fileTask = QueryFilesAsync(context, fileDelayMilliseconds, token);
 
             var apps = await appTask.ConfigureAwait(false);
-            if (!fileTask.IsCompleted && apps.Count > 0)
-                publishApplications?.Invoke(new SearchBatch(ResultRanker.Rank(apps, sortMode, maximumResults, _usage.GetBoost),
-                    UiStrings.Get("AppsReady"), false));
+            token.ThrowIfCancellationRequested();
+            // Local tools must not wait for the file debounce or a cold IPC query.
+            var immediate = filter == "All" ? apps.Concat(builtInResults).Concat(systemResults) : apps;
+            var immediateResults = ResultRanker.Rank(immediate, sortMode, maximumResults, _usage.GetBoost);
+            if (!fileTask.IsCompleted && immediateResults.Count > 0)
+                publishApplications?.Invoke(new SearchBatch(immediateResults, UiStrings.Get("AppsReady"), false));
 
             var fileBatch = await fileTask.ConfigureAwait(false);
             var files = fileBatch.Results;

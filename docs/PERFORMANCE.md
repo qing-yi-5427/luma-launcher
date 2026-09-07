@@ -3,7 +3,65 @@
 Measured on the development machine. These numbers are regression indicators, not
 hardware-independent guarantees.
 
-## Mimo hardening verification (2026-09-07, resumed after reboot)
+## Input scheduling and same-host comparison (2026-09-07)
+
+Typed apps/tools now start immediately; only file queries use a cancellable
+100 ms tail debounce. Enter bypasses it and can execute the first actionable app
+batch without waiting for file IPC. Explicit filters/load-more remain immediate.
+IME composition invalidates old results; cancelled generations cannot clear a new
+query's progress state or publish errors into it. Shell icons have a 32-request
+in-flight/queued cap (four native workers), and Windows Index COM queries are
+serialized so obsolete queued requests cancel before entering native code.
+
+### Same-host main / mimo sample
+
+Built `main@6b8b82b` and the optimized mimo sources in Release, then used the exact
+same `Tools/Luma.ResourceProbe` host/configuration on .NET 10.0.11. Real app index
+and Everything, optional sources off, offscreen WPF layout plus shell icons,
+60 search/hide cycles. Final paired run was sequential, mimo then main. A prior
+pair in reverse order produced similar timing (~315 vs ~145 ms). Neither probe
+forced GC or trimmed the working set.
+
+| Metric | main | optimized mimo |
+|---|---:|---:|
+| Input to final results P95, 60 queries | 315.50 ms | 140.47 ms |
+| Initialized hidden private memory | 96.44 MiB | 97.19 MiB |
+| Private memory after 20 cycles | 178.11 MiB | 179.54 MiB |
+| Private memory after 40 cycles | 178.87 MiB | 181.70 MiB |
+| Private memory after 60 cycles | 182.70 MiB | 181.87 MiB |
+| Private memory after additional 30 s | 182.50 MiB | 181.57 MiB |
+| Working set after additional 30 s | 220.43 MiB | 221.48 MiB |
+| Handles / threads after additional 30 s | 1164 / 42 | 1149 / 43 |
+
+The measured input-to-final P95 improved about **55%**. This includes file debounce
+and real provider work, but not native window activation/DWM. The two revisions'
+private-memory cost is similar under this workload; **no memory reduction is
+claimed**. Both retain substantial WPF/shell/runtime allocations after first use.
+Mimo's 40-to-60-cycle private bytes were nearly flat, but handles and GC heap still
+change during the run: 60 cycles do not prove absence of a long-session leak.
+
+This is a framework-dependent comparison host, not the published EXE. It does not
+reproduce the earlier 31 MiB claim or isolate why that historical sample differed.
+An initial exploratory run used `GC.GetTotalMemory(false)` and returned negative
+values on this local runtime; those invalid managed-memory samples were discarded.
+The committed probe reports `GC.GetGCMemoryInfo().HeapSizeBytes` at the last GC,
+not current live bytes. Process-private bytes above are separate OS counters.
+
+### Additional final checks
+
+- Real WPF pipeline with synthetic local apps / blocked files: 12-sample
+  input-to-actionable P95 **3.36 ms** in the final integration run. This verifies no
+  fixed 250 ms delay; it is not a real-world app scan or hotkey latency claim.
+- Live integration: 1,482 apps, rebuild 38 ms, warm coordinator P95 **36 ms**.
+- Offscreen scroll P95 at 100/125/150/200%: **1.33 / 1.35 / 1.57 / 1.35 ms**.
+- Enter/current-query, duplicate Enter, hidden-window cancellation, IME event
+  handling, stale results, selection retention and bounded icon queue passed.
+
+See [acceptance checklist](ACCEPTANCE.md) for unverified native desktop scenarios
+and [probe instructions](../Tools/Luma.ResourceProbe/README.md) for reproduction.
+These results justify candidate testing, not an automatic mainline merge.
+
+## Earlier mimo hardening verification (2026-09-07, resumed after reboot)
 
 Scope: branch-local reliability/performance hardening; **not merged into main**.
 Existing user opt-ins are preserved. New profiles default bookmarks, automatic
@@ -124,7 +182,7 @@ Notes:
 
 | Area | Status | Notes |
 |---|---|---|
-| Input debounce 250 ms + cancel | OK | Enter skips delay |
+| File-only debounce 100 ms + cancel | OK | apps/tools immediate; Enter skips delay |
 | Icons async + LRU | OK | no block on first paint |
 | Everything query on STA worker thread | OK | 3 s reply timeout |
 | `AllowsTransparency` windows | **watch** | software composition; 100/150/200% DPI should be rechecked on low-end GPUs |

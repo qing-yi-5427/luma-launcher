@@ -18,6 +18,18 @@ internal static class HardeningTests
         await VerifyApplicationWorkerAsync();
         await VerifyOptionalIsolationAsync();
         await VerifyPreviewsAsync();
+        await VerifyIconQueueAsync();
+        var index = new WindowsIndexSearchService();
+        var indexSlot = (SemaphoreSlim)typeof(WindowsIndexSearchService).GetField("_querySlot", Private)!.GetValue(index)!;
+        await indexSlot.WaitAsync();
+        try
+        {
+            using var cancellation = new CancellationTokenSource();
+            var queued = index.SearchAsync("synthetic", 8, "File", cancellation.Token);
+            cancellation.Cancel();
+            await MustCancel(queued); // No COM call is permitted while the slot is held.
+        }
+        finally { indexSlot.Release(); }
         var defaults = new AppSettings();
         Check(!defaults.EnableBookmarks && !defaults.EnablePreview && !defaults.EnableClipboardHistory,
             "New users must opt into optional expensive features");
@@ -31,6 +43,29 @@ internal static class HardeningTests
         Check((DateTimeOffset)typeof(BrowserBookmarkService).GetField("_loadedAt", Private)!.GetValue(bookmarks)! == loadedAt,
             "Empty bookmark cache was reloaded");
         Console.WriteLine("PASS hardening: background apps, cancellation, optional isolation, preview cache/bounds and opt-in defaults");
+    }
+
+    private static async Task VerifyIconQueueAsync()
+    {
+        using var release = new ManualResetEventSlim();
+        var icons = new IconService { TestLoadIcon = _ => { release.Wait(); return null; } };
+        var loads = new List<Task<System.Windows.Media.ImageSource?>>();
+        using var cancellation = new CancellationTokenSource();
+        try
+        {
+            for (var i = 0; i < 300; i++) loads.Add(icons.GetAsync("synthetic-icon-" + i, cancellation.Token));
+            Check(icons.PendingCount == IconService.MaximumPendingLoads, "Shell icon queue unbounded");
+            cancellation.Cancel();
+            foreach (var task in loads)
+            {
+                try { await task; }
+                catch (OperationCanceledException) { }
+            }
+        }
+        finally { release.Set(); }
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (icons.PendingCount > 0 && DateTime.UtcNow < deadline) await Task.Delay(10);
+        Check(icons.PendingCount == 0 && icons.CachedCount <= IconService.MaximumPendingLoads, "Icon loads did not drain");
     }
 
     private static async Task VerifyApplicationWorkerAsync()

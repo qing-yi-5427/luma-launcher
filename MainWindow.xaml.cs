@@ -755,10 +755,9 @@ public sealed partial class MainWindow : Window
 
     private static void ApplyDwmStyling(IntPtr handle)
     {
-        // DWMWCP_ROUNDSMALL (3) matches the 8px Border/WindowChrome radius.
-        // Do NOT set a system backdrop here: an opaque WindowBrush plus backdrop
-        // type paints a square HWND under the rounded Border and breaks corners.
-        var corner = 3;
+        // Window is AllowsTransparency + transparent background; the Border alone
+        // owns the rounded silhouette. Force DWM not to add a second rounded clip.
+        var corner = 1; // DWMWCP_DONOTROUND
         NativeMethods.DwmSetWindowAttribute(handle, 33, ref corner, sizeof(int));
         var backdrop = 0; // DWMSBT_NONE
         NativeMethods.DwmSetWindowAttribute(handle, 38, ref backdrop, sizeof(int));

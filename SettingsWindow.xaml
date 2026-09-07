@@ -3,12 +3,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Luma 设置" Icon="/Luma;component/Assets/Luma.ico" Width="540" Height="700" WindowStartupLocation="CenterScreen"
-        WindowStyle="None" ResizeMode="NoResize" Topmost="True" Background="{DynamicResource WindowBrush}"
+        WindowStyle="None" ResizeMode="NoResize" Topmost="True" AllowsTransparency="True" Background="Transparent"
         Foreground="{DynamicResource TextBrush}" FontFamily="Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI"
         TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"
         UseLayoutRounding="True" SnapsToDevicePixels="True">
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" CornerRadius="8" GlassFrameThickness="0" ResizeBorderThickness="0"/>
+        <shell:WindowChrome CaptionHeight="0" CornerRadius="0" GlassFrameThickness="-1" ResizeBorderThickness="0"/>
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
@@ -133,6 +133,7 @@
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
+        <Style TargetType="CheckBox" BasedOn="{StaticResource LumaCheckBox}"/>
         <Style TargetType="TextBox">
             <Setter Property="MinHeight" Value="36"/>
             <Setter Property="Padding" Value="10,6"/>
@@ -222,7 +223,11 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="HotkeyBox" AutomationProperties.Name="全局快捷键"
-                                         ToolTip="任意组合，例如 Alt+E、Ctrl+Shift+F12、Win+Space"/>
+                                         IsReadOnly="True" Cursor="Hand" CaretBrush="{x:Null}"
+                                         PreviewKeyDown="HotkeyBox_PreviewKeyDown"
+                                         GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
+                                         LostKeyboardFocus="HotkeyBox_LostKeyboardFocus"
+                                         ToolTip="点击后直接按下快捷键组合；Esc 取消"/>
                                 <ComboBox Grid.Column="1" x:Name="HotkeyPresetBox" Width="120" Margin="8,0,0,0"
                                           AutomationProperties.Name="快捷键预设" SelectionChanged="HotkeyPreset_SelectionChanged">
                                     <ComboBoxItem Content="预设…" Tag=""/>
@@ -234,7 +239,7 @@
                                     <ComboBoxItem Content="Ctrl + Shift + F12" Tag="Ctrl+Shift+F12"/>
                                 </ComboBox>
                             </Grid>
-                            <TextBlock Text="支持 Alt/Ctrl/Shift/Win + 字母、数字、F 键、Space 等。"
+                            <TextBlock x:Name="HotkeyCaptureHint" Text="点击输入框后，直接按下你要用的组合键。Esc 取消。"
                                        Foreground="{DynamicResource FaintTextBrush}" FontSize="11.5" Margin="2,5,0,0"/>
 
                             <TextBlock Text="界面语言" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,16,0,7"/>

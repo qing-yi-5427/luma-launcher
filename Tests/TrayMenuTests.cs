@@ -66,7 +66,7 @@ internal static class TrayMenuTests
         {
             menu.PlacementTarget = host;
             menu.ApplyTemplate();
-            if (menu.Template.FindName("MenuSurface", menu) is not Border surface || surface.CornerRadius.TopLeft != 9)
+            if (menu.Template.FindName("MenuSurface", menu) is not Border surface || surface.CornerRadius.TopLeft != 10)
                 throw new InvalidOperationException("托盘菜单回退到了系统默认背景模板");
             ThemeService.Apply("Light");
             var lightMenu = TrayIconService.BuildMenu(() => { }, () => { }, () => System.Threading.Tasks.Task.CompletedTask,

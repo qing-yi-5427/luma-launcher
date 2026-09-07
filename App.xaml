@@ -163,6 +163,47 @@
             </Setter>
         </Style>
 
+        <!-- Unified check box used across Settings -->
+        <Style x:Key="LumaCheckBox" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusStyle}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <StackPanel Orientation="Horizontal" Background="Transparent">
+                            <Border x:Name="Box" Width="18" Height="18" CornerRadius="4"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource SurfaceSubtleBrush}"
+                                    BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
+                                <TextBlock x:Name="Mark" Text="&#xE73E;" FontFamily="Segoe Fluent Icons"
+                                           FontSize="11" Foreground="{DynamicResource WindowBrush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0"/>
+                            </Border>
+                            <ContentPresenter Margin="10,0,0,0" VerticalAlignment="Center"
+                                              RecognizesAccessKey="True"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="Mark" Property="Opacity" Value="1"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="CheckBox" BasedOn="{StaticResource LumaCheckBox}"/>
+
         <Style x:Key="LumaContextMenu" TargetType="ContextMenu">
             <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>

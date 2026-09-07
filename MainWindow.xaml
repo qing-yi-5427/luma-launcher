@@ -5,15 +5,15 @@
         services:SearchHighlight.Query="{Binding Text, ElementName=SearchBox}"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Luma" Icon="/Luma;component/Assets/Luma.ico" Width="700" Height="76"
-        WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="False"
-        Background="{DynamicResource WindowBrush}" ShowInTaskbar="False" Topmost="True"
+        WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True"
+        Background="Transparent" ShowInTaskbar="False" Topmost="True"
         FontFamily="Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI" Foreground="{DynamicResource TextBrush}"
         TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         Deactivated="Window_Deactivated" PreviewKeyDown="Window_PreviewKeyDown"
         MouseLeftButtonDown="Window_MouseLeftButtonDown">
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" CornerRadius="8" GlassFrameThickness="0" ResizeBorderThickness="0" UseAeroCaptionButtons="False"/>
+        <shell:WindowChrome CaptionHeight="0" CornerRadius="0" GlassFrameThickness="-1" ResizeBorderThickness="0" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>

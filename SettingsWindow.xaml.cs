@@ -316,6 +316,134 @@ public sealed partial class SettingsWindow : Window
             HotkeyBox.Text = preset;
     }
 
+    private string _hotkeyBeforeCapture = "Alt+Space";
+    private bool _capturingHotkey;
+
+    private void HotkeyBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        _hotkeyBeforeCapture = HotkeyBox.Text;
+        _capturingHotkey = true;
+        HotkeyBox.Text = "按下快捷键…";
+        if (HotkeyCaptureHint is not null)
+        {
+            HotkeyCaptureHint.Text = "正在录制：请按下组合键（至少一个修饰键）。Esc 取消。";
+            HotkeyCaptureHint.SetResourceReference(ForegroundProperty, "AccentBrush");
+        }
+    }
+
+    private void HotkeyBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (!_capturingHotkey)
+            return;
+        _capturingHotkey = false;
+        if (HotkeyBox.Text == "按下快捷键…")
+            HotkeyBox.Text = _hotkeyBeforeCapture;
+        if (HotkeyCaptureHint is not null)
+        {
+            HotkeyCaptureHint.Text = "点击输入框后，直接按下你要用的组合键。Esc 取消。";
+            HotkeyCaptureHint.SetResourceReference(ForegroundProperty, "FaintTextBrush");
+        }
+    }
+
+    private void HotkeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (!_capturingHotkey)
+            return;
+
+        // Modifier-only presses: keep waiting for the real key.
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt
+            or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.System or Key.ImeProcessed or Key.ImeConvert or Key.ImeAccept)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Escape)
+        {
+            HotkeyBox.Text = _hotkeyBeforeCapture;
+            _capturingHotkey = false;
+            if (HotkeyCaptureHint is not null)
+            {
+                HotkeyCaptureHint.Text = "已取消录制。";
+                HotkeyCaptureHint.SetResourceReference(ForegroundProperty, "FaintTextBrush");
+            }
+            Keyboard.ClearFocus();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Tab)
+            return;
+
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        var modifiers = Keyboard.Modifiers;
+        if (modifiers == ModifierKeys.None)
+        {
+            if (HotkeyCaptureHint is not null)
+                HotkeyCaptureHint.Text = "需要至少一个修饰键（Ctrl / Alt / Shift / Win）。";
+            e.Handled = true;
+            return;
+        }
+
+        var gesture = FormatGesture(modifiers, key);
+        if (!HotkeyGesture.TryParse(gesture, out _))
+        {
+            if (HotkeyCaptureHint is not null)
+                HotkeyCaptureHint.Text = $"不支持的按键：{gesture}";
+            e.Handled = true;
+            return;
+        }
+
+        HotkeyBox.Text = gesture;
+        _capturingHotkey = false;
+        if (HotkeyCaptureHint is not null)
+        {
+            HotkeyCaptureHint.Text = $"已录制：{gesture}（保存后生效）";
+            HotkeyCaptureHint.SetResourceReference(ForegroundProperty, "AccentBrush");
+        }
+        Keyboard.ClearFocus();
+        e.Handled = true;
+    }
+
+    private static string FormatGesture(ModifierKeys modifiers, Key key)
+    {
+        var parts = new List<string>(4);
+        if (modifiers.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
+        if (modifiers.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
+        if (modifiers.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
+        if (modifiers.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
+        parts.Add(KeyToToken(key));
+        return string.Join("+", parts);
+    }
+
+    private static string KeyToToken(Key key) => key switch
+    {
+        Key.Space => "Space",
+        Key.Tab => "Tab",
+        Key.Escape => "Esc",
+        Key.Enter or Key.Return => "Enter",
+        Key.Back => "Backspace",
+        Key.Delete => "Delete",
+        Key.Insert => "Insert",
+        Key.Home => "Home",
+        Key.End => "End",
+        Key.PageUp => "PageUp",
+        Key.PageDown => "PageDown",
+        Key.Left => "Left",
+        Key.Up => "Up",
+        Key.Right => "Right",
+        Key.Down => "Down",
+        Key.OemPlus => "=",
+        Key.OemMinus => "-",
+        Key.OemComma => ",",
+        Key.OemPeriod => ".",
+        >= Key.A and <= Key.Z => key.ToString(),
+        >= Key.D0 and <= Key.D9 => ((char)('0' + (key - Key.D0))).ToString(),
+        >= Key.NumPad0 and <= Key.NumPad9 => ((char)('0' + (key - Key.NumPad0))).ToString(),
+        >= Key.F1 and <= Key.F24 => "F" + (1 + key - Key.F1),
+        _ => key.ToString()
+    };
+
     private async void DownloadUpdate_Click(object sender, RoutedEventArgs e)
     {
         UpdateStatusText.Text = "正在下载并校验…";
@@ -383,9 +511,9 @@ public sealed partial class SettingsWindow : Window
     private void ApplyDwmStyling()
     {
         var handle = new WindowInteropHelper(this).Handle;
-        var corner = 3; // DWMWCP_ROUNDSMALL — matches Border CornerRadius 8
+        var corner = 1; // DWMWCP_DONOTROUND — Border owns the rounded shape
         NativeMethods.DwmSetWindowAttribute(handle, 33, ref corner, sizeof(int));
-        var backdrop = 0; // DWMSBT_NONE — avoid square backdrop under rounded Border
+        var backdrop = 0; // DWMSBT_NONE
         NativeMethods.DwmSetWindowAttribute(handle, 38, ref backdrop, sizeof(int));
     }
 }

@@ -91,7 +91,7 @@ public sealed partial class App : System.Windows.Application
             return;
         }
 
-        _settingsWindow = new SettingsWindow(_settingsStore.Current.Copy());
+        _settingsWindow = new SettingsWindow(_settingsStore.Current.Copy(), _launcherWindow.ActiveHotkey);
         _settingsWindow.SettingsSaved += SaveSettings;
         _settingsWindow.ClearHistoryRequested += _launcherWindow.ClearHistory;
         _settingsWindow.ClearQueryHistoryRequested += () => _launcherWindow.ClearQueryHistory();

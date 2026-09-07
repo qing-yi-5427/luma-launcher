@@ -22,4 +22,4 @@ Get-FileHash .\Luma.exe -Algorithm SHA256
 
 - Silently replace a running executable
 - Elevate without an explicit user action
-- Download and execute a payload without hash verification (when a `.sha256` companion asset exists)
+- Stage an update without a valid `Luma.exe.sha256` companion asset and a matching SHA-256.

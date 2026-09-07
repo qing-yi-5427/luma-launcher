@@ -8,6 +8,7 @@ public sealed class EverythingFileProvider : ILumaProvider
     private readonly WindowsIndexSearchService _windowsIndex = new();
     private bool _preferWindowsIndex;
     private Func<string, int, CancellationToken, string, string, Task<EverythingSearchResponse>>? _testQuery;
+    internal Func<string, int, string, CancellationToken, string, Task<EverythingSearchResponse>>? TestFallbackQuery { get; set; }
 
     public string Id => "files";
     public int Priority => 20;
@@ -35,10 +36,13 @@ public sealed class EverythingFileProvider : ILumaProvider
         set => _preferWindowsIndex = value;
     }
 
-    public async Task<IReadOnlyList<LauncherResult>> QueryAsync(ProviderContext context, CancellationToken token)
+    public async Task<IReadOnlyList<LauncherResult>> QueryAsync(ProviderContext context, CancellationToken token) =>
+        (await QueryBatchAsync(context, token).ConfigureAwait(false)).Results;
+
+    public async Task<EverythingSearchResponse> QueryBatchAsync(ProviderContext context, CancellationToken token)
     {
         if (context.Filter == "Application")
-            return [];
+            return new EverythingSearchResponse([], true, "应用");
 
         var candidateLimit = context.MaximumResults <= 64
             ? Math.Max(context.MaximumResults * 5, 40)
@@ -52,28 +56,31 @@ public sealed class EverythingFileProvider : ILumaProvider
                 ? await _testQuery(context.Query, candidateLimit, token, context.Filter, context.SortMode).ConfigureAwait(false)
                 : await _everything.SearchAsync(context.Query, candidateLimit, token, context.Filter, context.SortMode)
                     .ConfigureAwait(false);
-            if (response.Available && response.Results.Count > 0)
-                return Hydrate(response.Results, context);
+            if (response.Available)
+                return response with { Results = Hydrate(response.Results, context) };
 
-            // Fallback when Everything is missing or returned nothing usable.
-            if (!response.Available || response.Results.Count == 0)
+            // Only fail over on connection/query errors, never on a valid empty match set.
+            if (!response.Available)
             {
-                var fallback = await _windowsIndex.SearchAsync(context.Query, candidateLimit, context.Filter, token)
+                var fallback = await QueryFallbackAsync(context, candidateLimit, token)
                     .ConfigureAwait(false);
-                if (fallback.Available && fallback.Results.Count > 0)
-                    return Hydrate(fallback.Results, context);
+                return fallback with { Results = Hydrate(fallback.Results, context),
+                    StatusText = fallback.Available ? fallback.StatusText : response.StatusText + " · " + fallback.StatusText };
             }
         }
         else
         {
-            var fallback = await _windowsIndex.SearchAsync(context.Query, candidateLimit, context.Filter, token)
+            var fallback = await QueryFallbackAsync(context, candidateLimit, token)
                 .ConfigureAwait(false);
-            if (fallback.Available)
-                return Hydrate(fallback.Results, context);
+            return fallback with { Results = Hydrate(fallback.Results, context) };
         }
 
-        return [];
+        return new EverythingSearchResponse([], false, "文件搜索不可用");
     }
+
+    private Task<EverythingSearchResponse> QueryFallbackAsync(ProviderContext context, int limit, CancellationToken token) =>
+        TestFallbackQuery is { } query ? query(context.Query, limit, context.Filter, token, context.SortMode) :
+        _windowsIndex.SearchAsync(context.Query, limit, context.Filter, token, context.SortMode);
 
     private static IReadOnlyList<LauncherResult> Hydrate(IReadOnlyList<LauncherResult> files, ProviderContext context)
     {

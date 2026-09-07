@@ -33,17 +33,19 @@ public sealed class ClipboardHistoryService : IDisposable
         lock (_sync) snapshot = _entries.ToArray();
         if (snapshot.Length == 0)
             return [];
-        var prepared = FuzzyMatcher.Prepare(query.Length == 0 ? "clip" : query);
+        var terms = query.Trim();
+        if (terms.Equals("clip", StringComparison.OrdinalIgnoreCase)) terms = string.Empty;
+        else if (terms.StartsWith("clip ", StringComparison.OrdinalIgnoreCase)) terms = terms[5..].Trim();
+        var prepared = FuzzyMatcher.Prepare(terms);
         var results = new List<LauncherResult>();
         for (var i = 0; i < snapshot.Length; i++)
         {
             var text = snapshot[i];
             var preview = text.Length > 80 ? text[..80] + "…" : text;
             var score = 2000.0 - i * 10;
-            if (query.Length > 0 && !query.Equals("clip", StringComparison.OrdinalIgnoreCase) &&
-                !query.StartsWith("clip ", StringComparison.OrdinalIgnoreCase))
+            if (terms.Length > 0)
             {
-                var match = FuzzyMatcher.Score(prepared, FuzzyMatcher.PrepareCandidate(preview), string.Empty);
+                var match = FuzzyMatcher.Score(prepared, FuzzyMatcher.PrepareCandidate(text), string.Empty);
                 if (double.IsNegativeInfinity(match))
                     continue;
                 score = match;

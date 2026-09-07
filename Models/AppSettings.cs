@@ -23,9 +23,9 @@ public sealed class AppSettings
     public string SearchEngines { get; set; } = string.Empty;
     public bool EnableWindowSwitcher { get; set; } = true;
     public bool EnableSystemCommands { get; set; } = true;
-    public bool EnableBookmarks { get; set; } = true;
+    public bool EnableBookmarks { get; set; }
     public bool EnableGameMode { get; set; }
-    public bool EnablePreview { get; set; } = true;
+    public bool EnablePreview { get; set; }
     public bool PreferWindowsIndex { get; set; }
     public string Language { get; set; } = "zh-CN";
     public bool RecordQueryHistory { get; set; } = true;

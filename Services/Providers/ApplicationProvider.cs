@@ -32,7 +32,8 @@ public sealed class ApplicationProvider : ILumaProvider, IDisposable
             catch (OperationCanceledException) { throw; }
             catch { }
         }
-        return _apps.Search(context.Prepared, Math.Max(context.MaximumResults, _apps.Count), context.Usage, context.Aliases);
+        return await Task.Run(() => _apps.Search(context.Prepared, Math.Max(context.MaximumResults, _apps.Count),
+            context.Usage, context.Aliases, token), token).ConfigureAwait(false);
     }
 
     public void Dispose() => _apps.Dispose();

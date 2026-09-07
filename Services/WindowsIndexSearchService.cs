@@ -6,18 +6,19 @@ namespace LumaLauncher.Services;
 /// <summary>
 /// Fallback file search via the Windows Search (Indexing Service) OLE DB provider.
 /// Uses late-bound ADODB COM so no NuGet package is required. Used only when
-/// Everything IPC is unavailable. Results are ranked locally.
+/// Everything IPC is unavailable or Windows Index is preferred. Explicit ordering
+/// is applied before the result limit; one extra row preserves pagination state.
 /// </summary>
 public sealed class WindowsIndexSearchService
 {
     private const string ConnectionString = "Provider=Search.CollatorDSO;Extended Properties='Application=Windows';";
 
-    public async Task<EverythingSearchResponse> SearchAsync(string query, int maximumResults, string filter, CancellationToken token)
+    public async Task<EverythingSearchResponse> SearchAsync(string query, int maximumResults, string filter, CancellationToken token, string sortMode = "Smart")
     {
         if (string.IsNullOrWhiteSpace(query))
             return new EverythingSearchResponse([], true, UiStrings.Get("WindowsIndex"));
 
-        return await Task.Run(() => SearchCore(query, maximumResults, filter, token), token).ConfigureAwait(false);
+        return await Task.Run(() => SearchCore(query, maximumResults, filter, token, sortMode), token).ConfigureAwait(false);
     }
 
     public static bool IsAvailable()
@@ -51,30 +52,39 @@ public sealed class WindowsIndexSearchService
         }
     }
 
-    private static EverythingSearchResponse SearchCore(string query, int maximumResults, string filter, CancellationToken token)
+    internal static string BuildQuery(string query, int maximumResults, string filter, string sortMode)
     {
-        token.ThrowIfCancellationRequested();
         var like = EscapeLike(query.Trim());
-        if (like.Length == 0)
-            return new EverythingSearchResponse([], true, UiStrings.Get("WindowsIndex"));
-
         var kindPredicate = filter switch
         {
-            "File" => "AND SCOPE='file:' AND NOT CONTAINS(System.ItemType, 'Directory')",
-            "Folder" => "AND SCOPE='file:' AND CONTAINS(System.ItemType, 'Directory')",
-            "Application" => string.Empty,
-            _ => "AND SCOPE='file:'"
+            "File" => "AND System.ItemType <> 'Directory'",
+            "Folder" => "AND System.ItemType = 'Directory'",
+            _ => string.Empty
         };
-
-        var sql = $"""
-            SELECT TOP {Math.Clamp(maximumResults, 1, 512)}
+        var order = sortMode switch
+        {
+            "NameDescending" => "System.ItemNameDisplay DESC",
+            "SizeAscending" => "System.Size ASC",
+            "SizeDescending" => "System.Size DESC",
+            "ModifiedNewest" => "System.DateModified DESC",
+            "ModifiedOldest" => "System.DateModified ASC",
+            _ => "System.ItemNameDisplay ASC"
+        };
+        return $"""
+            SELECT TOP {(long)Math.Max(1, maximumResults) + 1}
                 System.ItemPathDisplay, System.ItemNameDisplay, System.DateModified, System.Size, System.ItemType
             FROM SYSTEMINDEX
-            WHERE CONTAINS(System.Search.Contents, '"{like}"', 1033)
-               OR System.FileName LIKE '%{like}%' ESCAPE '\\'
+            WHERE SCOPE='file:' AND System.FileName LIKE '%{like}%'
                   {kindPredicate}
-            ORDER BY System.ItemPathDisplay
+            ORDER BY {order}, System.ItemPathDisplay ASC
             """;
+    }
+
+    private static EverythingSearchResponse SearchCore(string query, int maximumResults, string filter, CancellationToken token, string sortMode)
+    {
+        token.ThrowIfCancellationRequested();
+        maximumResults = Math.Max(1, maximumResults);
+        var sql = BuildQuery(query, maximumResults, filter, sortMode);
 
         var connectionType = Type.GetTypeFromProgID("ADODB.Connection");
         if (connectionType is null)
@@ -87,11 +97,13 @@ public sealed class WindowsIndexSearchService
             connection = Activator.CreateInstance(connectionType);
             if (connection is null)
                 return new EverythingSearchResponse([], false, "Windows 索引不可用");
+            connection.ConnectionTimeout = 3;
+            connection.CommandTimeout = 3;
             connection.Open(ConnectionString);
             recordset = connection.Execute(sql);
 
             var results = new List<LauncherResult>(Math.Min(maximumResults, 64));
-            while (!(bool)recordset.EOF && results.Count < maximumResults)
+            while (!(bool)recordset.EOF && results.Count <= maximumResults)
             {
                 token.ThrowIfCancellationRequested();
                 var path = recordset.Fields[0].Value as string;
@@ -100,7 +112,7 @@ public sealed class WindowsIndexSearchService
                     var name = recordset.Fields[1].Value as string;
                     if (string.IsNullOrWhiteSpace(name))
                         name = Path.GetFileName(path);
-                    var isDirectory = Directory.Exists(path);
+                    var isDirectory = string.Equals(recordset.Fields[4].Value as string, "Directory", StringComparison.OrdinalIgnoreCase);
                     if (!(filter == "File" && isDirectory || filter == "Folder" && !isDirectory))
                     {
                         results.Add(new LauncherResult
@@ -108,9 +120,9 @@ public sealed class WindowsIndexSearchService
                             Title = name!,
                             Subtitle = path,
                             Target = path,
-                            Kind = isDirectory ? LauncherResultKind.Folder
-                                : path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? LauncherResultKind.Application
-                                : LauncherResultKind.File,
+                            Kind = isDirectory ? LauncherResultKind.Folder : LauncherResultKind.File,
+                            IndexedSize = recordset.Fields[3].Value is long size ? size : null,
+                            IndexedModifiedFileTime = recordset.Fields[2].Value is DateTime modified ? modified.ToUniversalTime().ToFileTimeUtc() : null,
                             Score = 0,
                             ProviderOrder = results.Count
                         });
@@ -119,9 +131,8 @@ public sealed class WindowsIndexSearchService
                 recordset.MoveNext();
             }
 
-            if (results.Count > 0)
-                return new EverythingSearchResponse(results, true, UiStrings.Get("WindowsIndex"), results.Count, false);
-            return new EverythingSearchResponse([], true, UiStrings.Get("WindowsIndex"));
+            return new EverythingSearchResponse(results.Take(maximumResults).ToList(), true, UiStrings.Get("WindowsIndex"),
+                results.Count, results.Count > maximumResults);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -144,5 +155,5 @@ public sealed class WindowsIndexSearchService
     }
 
     private static string EscapeLike(string value) =>
-        value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_").Replace("'", "''").Replace("\"", "\"\"");
+        value.Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]").Replace("'", "''");
 }

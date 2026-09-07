@@ -64,6 +64,15 @@ public sealed class HotkeyService
         }
     }
 
+    internal static bool TryProbeForSettings(string gesture, string? activeGesture, out int errorCode)
+    {
+        errorCode = 0;
+        if (HotkeyGesture.TryParse(gesture, out var requested) &&
+            HotkeyGesture.TryParse(activeGesture, out var active) &&
+            requested.Modifiers == active.Modifiers && requested.VirtualKey == active.VirtualKey) return true;
+        return TryProbe(gesture, out errorCode);
+    }
+
     public bool IsHotkeyMessage(int message, IntPtr wParam) =>
         message == NativeMethods.WmHotkey && wParam.ToInt32() == HotkeyId;
 

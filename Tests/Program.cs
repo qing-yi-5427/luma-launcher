@@ -11,6 +11,8 @@ if (args.Contains("--dpi-scroll")) { LumaLauncher.Tests.DpiScrollBench.Run(); re
 LumaLauncher.Tests.HighlightTests.Run();
 LumaLauncher.Tests.ReleaseRegressionTests.Run();
 await LumaLauncher.Tests.ReleaseRegressionTests.RunSearchAsync();
+await LumaLauncher.Tests.MimoRegressionTests.RunAsync();
+await LumaLauncher.Tests.HardeningTests.RunAsync();
 
 var exact = FuzzyMatcher.Score("notepad", "Notepad", string.Empty);
 var fuzzy = FuzzyMatcher.Score("ntpd", "Notepad", string.Empty);

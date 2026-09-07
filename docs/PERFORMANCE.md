@@ -3,7 +3,67 @@
 Measured on the development machine. These numbers are regression indicators, not
 hardware-independent guarantees.
 
-## Current (v0.5.0, 2026-09-07)
+## Mimo hardening verification (2026-09-07, resumed after reboot)
+
+Scope: branch-local reliability/performance hardening; **not merged into main**.
+Existing user opt-ins are preserved. New profiles default bookmarks, automatic
+image preview and clipboard history to off.
+
+- Application scoring runs on a worker and checks cancellation during scanning.
+- Optional window/bookmark providers have separate single-call slots, no pending
+  work queue, and a 120 ms grace period after core results are published. Results
+  arriving after that deadline are omitted for that query. Uncancellable native
+  work can retain its own slot but cannot consume the other provider's slot.
+- Preview selection debounce is 140 ms. Decode concurrency is one; output is capped
+  to 240 px on the long edge. Inputs over 50 MiB or 40 million pixels are skipped.
+  Path/mtime/length keyed cache writes are atomic, with 200-file / 40 MiB / 6-hour
+  limits. Cancellation cannot interrupt a native decoder already executing; it
+  prevents stale publication and cancels queued work.
+- Regression tests cover synchronous blocked optional work, failure isolation,
+  cancellation propagation, app caller responsiveness, empty bookmark caching,
+  thumbnail reuse/invalidation/limits, and real settings save/import state.
+
+Commands (local SDK: `C:/Users/qingy/AppData/Local/Temp/dotnet-sdk-luma/dotnet.exe`):
+
+```powershell
+dotnet run --project Tests/Luma.SmokeTests.csproj -c Release
+dotnet run --project Tests/Luma.SmokeTests.csproj -c Release -- --integration
+dotnet run --project Tests/Luma.SmokeTests.csproj -c Release -- --dpi-scroll
+dotnet publish Launcher.csproj -p:PublishProfile=SingleFile
+```
+
+| Measurement | Result |
+|---|---:|
+| Isolated smoke/regression suite | Passed, including three consecutive final runs |
+| Live Windows Index | Six explicit sort modes, 16/64 prefix and lookahead passed |
+| Live Everything | Six explicit sort modes, 16/128 prefix; 1,024 file results passed |
+| Application index rebuild | 1,482 apps, 40 ms |
+| Warm coordinator P95 (six queries) | 48 ms |
+| Offscreen scroll P95, 100/125/150/200% | 2.77 / 2.48 / 2.57 / 2.80 ms |
+| Single EXE | 62,073,905 bytes (59.20 MiB) |
+| Hidden portable process, ~25 s working set | 117.69 MiB |
+| Hidden portable process, private bytes | 127.98 MiB |
+| Handles / threads | 719 / 29 |
+| Idle CPU time over 10 seconds | 15.62 ms (about 0.16% of one logical CPU) |
+| Existing Everything processes combined, working set / private bytes | 268.29 / 298.59 MiB |
+
+The idle probe used a fresh isolated portable profile, `--silent`, Connect-only
+Everything, no foreground window and no forced working-set trim by the harness.
+It did not modify the user's profile or start/stop Everything. It stopped only
+its own Luma process. The combined observed Luma + Everything footprint was
+approximately **386 MiB working set / 427 MiB private bytes** on this machine;
+Everything also serves other applications, so this is not Luma's incremental cost.
+
+The new memory sample is materially higher than the earlier 84/31 MB snapshot
+below. Different profile/cache/warmup conditions prevent attributing that difference
+to this patch; the old result is **not reproduced** and the suggested 80 MB private
+bytes soft target is not met in this probe. Do not claim a memory win or superiority
+over Wox/SwiftList from these measurements. This is one machine/run, not a sustained
+memory-growth test. Coordinator timings exclude debounce, icon load and desktop
+composition. Real IME, multi-monitor scaling, repeated hotkey wakeup and file-dialog
+quick-switch still need hands-on acceptance before a mainline/release decision.
+
+## Earlier v0.5.0 snapshot (2026-09-07)
 
 | Metric | Value |
 |---|---:|

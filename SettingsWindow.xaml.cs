@@ -13,8 +13,11 @@ public sealed partial class SettingsWindow : Window
     private readonly CancellationTokenSource _lifetime = new();
     private bool _saved;
 
-    public SettingsWindow(AppSettings settings)
+    private readonly string? _activeHotkey;
+    private AppSettings _loadedSettings = new();
+    public SettingsWindow(AppSettings settings, string? activeHotkey = null)
     {
+        _activeHotkey = activeHotkey;
         _originalTheme = settings.Theme;
         _webSearchUrl = settings.WebSearchUrl;
         InitializeComponent();
@@ -51,6 +54,7 @@ public sealed partial class SettingsWindow : Window
     private void LoadControls(AppSettings settings)
     {
         settings.Normalize();
+        _loadedSettings = settings.Copy();
         _webSearchUrl = settings.WebSearchUrl;
         HotkeyBox.Text = settings.Hotkey;
         LanguageBox.SelectedValue = settings.Language;
@@ -112,7 +116,7 @@ public sealed partial class SettingsWindow : Window
             HotkeyBox.Focus();
             return;
         }
-        if (!HotkeyService.TryProbe(hotkey, out var probeError))
+        if (!HotkeyService.TryProbeForSettings(hotkey, _activeHotkey, out var probeError))
         {
             EverythingPathHint.Text = $"快捷键 {hotkey} 可能已被占用（错误 {probeError}），请换一个组合。";
             EverythingPathHint.SetResourceReference(ForegroundProperty, "DangerBrush");
@@ -129,36 +133,36 @@ public sealed partial class SettingsWindow : Window
             return;
         }
 
-        var settings = new AppSettings
-        {
-            Hotkey = hotkey,
-            Theme = ThemeBox.SelectedValue as string ?? "Auto",
-            DayTheme = DayThemeBox.SelectedValue as string ?? "Paper",
-            NightTheme = NightThemeBox.SelectedValue as string ?? "InkTeal",
-            Density = DensityBox.SelectedValue as string ?? "Comfortable",
-            StartWithWindows = StartupBox.IsChecked == true,
-            EverythingPathMode = everythingMode,
-            EverythingPath = everythingPath,
-            EverythingLifecycle = EverythingLifecycleBox.SelectedValue as string ?? "Managed",
-            EnableQuickSwitch = QuickSwitchBox.IsChecked == true,
-            EnableWindowSwitcher = WindowSwitcherBox.IsChecked == true,
-            EnableSystemCommands = SystemCommandsBox.IsChecked == true,
-            EnableBookmarks = BookmarksBox.IsChecked == true,
-            EnableGameMode = GameModeBox.IsChecked == true,
-            EnablePreview = PreviewBox.IsChecked == true,
-            PreferWindowsIndex = WindowsIndexBox.IsChecked == true,
-            RecordHistory = HistoryBox.IsChecked == true,
-            RecordQueryHistory = QueryHistoryBox.IsChecked == true,
-            EnableClipboardHistory = ClipboardBox.IsChecked == true,
-            RememberWindowPosition = RememberPositionBox.IsChecked == true,
-            Language = LanguageBox.SelectedValue as string ?? "zh-CN",
-            Aliases = AliasesBox.Text.Trim(),
-            AppFolders = AppFoldersBox.Text.Trim(),
-            CustomCommands = CommandsBox.Text.Trim(),
-            SearchEngines = EnginesBox.Text.Trim(),
-            WebSearchUrl = _webSearchUrl,
-            ResultSort = ResultSortBox.SelectedValue as string ?? ResultRanker.Smart
-        };
+        // Edit the loaded snapshot, including after import, rather than resetting
+        // properties which have no corresponding control in this dialog.
+        var settings = _loadedSettings.Copy();
+        settings.Hotkey = hotkey;
+        settings.Theme = ThemeBox.SelectedValue as string ?? "Auto";
+        settings.DayTheme = DayThemeBox.SelectedValue as string ?? "Paper";
+        settings.NightTheme = NightThemeBox.SelectedValue as string ?? "InkTeal";
+        settings.Density = DensityBox.SelectedValue as string ?? "Comfortable";
+        settings.StartWithWindows = StartupBox.IsChecked == true;
+        settings.EverythingPathMode = everythingMode;
+        settings.EverythingPath = everythingPath;
+        settings.EverythingLifecycle = EverythingLifecycleBox.SelectedValue as string ?? "Managed";
+        settings.EnableQuickSwitch = QuickSwitchBox.IsChecked == true;
+        settings.EnableWindowSwitcher = WindowSwitcherBox.IsChecked == true;
+        settings.EnableSystemCommands = SystemCommandsBox.IsChecked == true;
+        settings.EnableBookmarks = BookmarksBox.IsChecked == true;
+        settings.EnableGameMode = GameModeBox.IsChecked == true;
+        settings.EnablePreview = PreviewBox.IsChecked == true;
+        settings.PreferWindowsIndex = WindowsIndexBox.IsChecked == true;
+        settings.RecordHistory = HistoryBox.IsChecked == true;
+        settings.RecordQueryHistory = QueryHistoryBox.IsChecked == true;
+        settings.EnableClipboardHistory = ClipboardBox.IsChecked == true;
+        settings.RememberWindowPosition = RememberPositionBox.IsChecked == true;
+        settings.Language = LanguageBox.SelectedValue as string ?? "zh-CN";
+        settings.Aliases = AliasesBox.Text.Trim();
+        settings.AppFolders = AppFoldersBox.Text.Trim();
+        settings.CustomCommands = CommandsBox.Text.Trim();
+        settings.SearchEngines = EnginesBox.Text.Trim();
+        settings.WebSearchUrl = _webSearchUrl;
+        settings.ResultSort = ResultSortBox.SelectedValue as string ?? ResultRanker.Smart;
         try
         {
             SettingsSaved?.Invoke(settings);

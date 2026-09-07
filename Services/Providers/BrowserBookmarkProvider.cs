@@ -23,7 +23,7 @@ public sealed class BrowserBookmarkProvider : ILumaProvider
     {
         if (!_enabled || context.Filter != "All" || context.Query.Length < 2)
             return Task.FromResult<IReadOnlyList<LauncherResult>>([]);
-        return Task.Run(() => _service.Search(context.Query, Math.Min(context.MaximumResults, 12), context.Usage), token);
+        return Task.Run(() => _service.Search(context.Query, Math.Min(context.MaximumResults, 12), context.Usage, token), token);
     }
 
     public void Reload() => _service.Reload();

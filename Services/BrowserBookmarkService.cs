@@ -12,9 +12,11 @@ public sealed class BrowserBookmarkService
     private DateTimeOffset _loadedAt = DateTimeOffset.MinValue;
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(10);
 
-    public IReadOnlyList<LauncherResult> Search(string query, int limit, UsageStore usage)
+    public IReadOnlyList<LauncherResult> Search(string query, int limit, UsageStore usage, CancellationToken token = default)
     {
+        token.ThrowIfCancellationRequested();
         EnsureLoaded();
+        token.ThrowIfCancellationRequested();
         BookmarkEntry[] snapshot;
         lock (_sync) snapshot = _entries;
         if (snapshot.Length == 0)
@@ -24,6 +26,7 @@ public sealed class BrowserBookmarkService
         var matches = new List<LauncherResult>();
         foreach (var entry in snapshot)
         {
+            token.ThrowIfCancellationRequested();
             var score = FuzzyMatcher.Score(prepared,
                 FuzzyMatcher.PrepareCandidate(entry.Title),
                 FuzzyMatcher.PrepareCandidate($"{entry.Browser} {entry.Url}"));
@@ -60,7 +63,7 @@ public sealed class BrowserBookmarkService
     {
         lock (_sync)
         {
-            if (DateTimeOffset.UtcNow - _loadedAt < CacheTtl && _entries.Length > 0)
+            if (DateTimeOffset.UtcNow - _loadedAt < CacheTtl)
                 return;
             _entries = LoadAll();
             _loadedAt = DateTimeOffset.UtcNow;

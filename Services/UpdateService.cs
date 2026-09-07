@@ -32,15 +32,16 @@ internal static class UpdateService
                 var url = asset.TryGetProperty("browser_download_url", out var u) ? u.GetString() : null;
                 if (name.Equals("Luma.exe", StringComparison.OrdinalIgnoreCase) && url is not null)
                     assetUrl = url;
-                if (name.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase) && url is not null)
+                if (name.Equals("Luma.exe.sha256", StringComparison.OrdinalIgnoreCase) && url is not null)
                 {
                     // Prefer companion hash file when present.
                     try
                     {
                         using var hashClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
                         var hashText = await hashClient.GetStringAsync(url, token);
-                        sha256 = hashText.Split(' ', '\t', '\n', '\r')[0].Trim();
+                        sha256 = hashText.Trim().Split([' ', '\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
                     }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
                     catch (Exception exception)
                     {
                         DiagnosticsService.Log("update-hash-fetch", exception);
@@ -64,7 +65,7 @@ internal static class UpdateService
     }
 
     /// <summary>
-    /// Downloads Luma.exe to a temp path, verifies SHA-256 when provided, and stages
+    /// Downloads Luma.exe only with a valid companion SHA-256, verifies it, and stages
     /// a replacement script. Never silently overwrites a running executable or elevates.
     /// </summary>
     internal static async Task<string> DownloadAndStageAsync(CancellationToken token)
@@ -72,6 +73,8 @@ internal static class UpdateService
         var info = await QueryAsync(token).ConfigureAwait(false);
         if (!info.HasNewer || info.AssetUrl is null)
             return "没有可下载的新版本，或发布包缺少 Luma.exe。";
+        if (!IsValidSha256(info.Sha256))
+            return "发布包缺少有效的 Luma.exe.sha256 或校验文件下载失败，已停止自动下载与替换。请重试或前往发布页核对。";
 
         var directory = Path.Combine(AppDataPaths.DirectoryPath, "updates");
         Directory.CreateDirectory(directory);
@@ -87,11 +90,10 @@ internal static class UpdateService
             await stream.CopyToAsync(file, token);
 
         var actualHash = await ComputeSha256Async(temp, token);
-        if (!string.IsNullOrWhiteSpace(info.Sha256) &&
-            !actualHash.Equals(info.Sha256, StringComparison.OrdinalIgnoreCase))
+        if (!actualHash.Equals(info.Sha256, StringComparison.OrdinalIgnoreCase))
         {
             File.Delete(temp);
-            return $"哈希校验失败（期望 {info.Sha256[..Math.Min(12, info.Sha256.Length)]}…，实际 {actualHash[..12]}…）。已取消替换。";
+            return $"哈希校验失败（期望 {info.Sha256![..12]}…，实际 {actualHash[..12]}…）。已取消替换。";
         }
 
         File.Move(temp, target, true);
@@ -112,6 +114,8 @@ internal static class UpdateService
 
         return $"已下载并校验 {info.Tag}（SHA-256 {actualHash[..16]}…）。请退出 Luma，然后运行：{script}";
     }
+
+    internal static bool IsValidSha256(string? hash) => hash is { Length: 64 } && hash.All(Uri.IsHexDigit);
 
     private static async Task<string> ComputeSha256Async(string path, CancellationToken token)
     {

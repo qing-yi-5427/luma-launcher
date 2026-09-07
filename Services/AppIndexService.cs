@@ -148,13 +148,14 @@ public sealed class AppIndexService : IDisposable
     }
 
     public IReadOnlyList<LauncherResult> Search(FuzzyMatcher.PreparedQuery query, int maximumResults, UsageStore usage,
-        IReadOnlyDictionary<string, string> aliases)
+        IReadOnlyDictionary<string, string> aliases, CancellationToken token = default)
     {
         var matches = new List<LauncherResult>(Math.Min(32, Count));
         var aliasTarget = aliases.GetValueOrDefault(query.Normalized);
         var aliasQuery = string.IsNullOrWhiteSpace(aliasTarget) ? default : FuzzyMatcher.Prepare(aliasTarget);
         foreach (var entry in Volatile.Read(ref _entries))
         {
+            token.ThrowIfCancellationRequested();
             var match = FuzzyMatcher.Score(query, entry.NormalizedTitle, entry.NormalizedSubtitle);
             if (!string.IsNullOrWhiteSpace(aliasTarget))
             {
@@ -175,6 +176,7 @@ public sealed class AppIndexService : IDisposable
             });
         }
 
+        token.ThrowIfCancellationRequested();
         matches.Sort(static (left, right) =>
         {
             var score = right.Score.CompareTo(left.Score);
@@ -182,6 +184,7 @@ public sealed class AppIndexService : IDisposable
         });
         if (matches.Count > maximumResults)
             matches.RemoveRange(maximumResults, matches.Count - maximumResults);
+        token.ThrowIfCancellationRequested();
         return matches;
     }
 

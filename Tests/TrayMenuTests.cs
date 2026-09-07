@@ -118,6 +118,38 @@ internal static class TrayMenuTests
             throw new InvalidOperationException("Settings-to-search sort sync failed");
         settings.Close(); launcher.CloseForExit();
         VerifyFullResultsLayout();
+        VerifySettingsSnapshot();
+    }
+
+    private static void VerifySettingsSnapshot()
+    {
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        foreach (var imported in new[] { false, true })
+        {
+            var original = new AppSettings { Hotkey = "Ctrl+Alt+Shift+F24", WindowLeft = 123, WindowTop = 234,
+                ShowOnboarding = false, EnableBookmarks = true, EnablePreview = true, EverythingLifecycle = "Connect" };
+            var window = new SettingsWindow(original, original.Hotkey);
+            try
+            {
+                var expectedLeft = original.WindowLeft;
+                if (imported)
+                {
+                    var snapshot = original.Copy();
+                    snapshot.WindowLeft = 456;
+                    expectedLeft = snapshot.WindowLeft;
+                    typeof(SettingsWindow).GetMethod("LoadControls", flags)!.Invoke(window, [snapshot]);
+                }
+                ((CheckBox)window.FindName("HistoryBox")).IsChecked = false;
+                AppSettings? saved = null;
+                window.SettingsSaved += value => saved = value;
+                typeof(SettingsWindow).GetMethod("Save_Click", flags)!.Invoke(window, [window, new RoutedEventArgs()]);
+                if (saved is null || saved.WindowLeft != expectedLeft || saved.WindowTop != 234 || saved.ShowOnboarding ||
+                    saved.RecordHistory || !saved.EnableBookmarks || !saved.EnablePreview || original.WindowLeft != 123)
+                    throw new InvalidOperationException("Settings save lost hidden/imported state or changed the original");
+            }
+            finally { window.Close(); }
+        }
+        Console.WriteLine("PASS settings dialog save/import preserves hidden state and existing opt-ins");
     }
 
     private static void VerifyFullResultsLayout()

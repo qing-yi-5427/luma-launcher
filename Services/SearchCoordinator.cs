@@ -19,17 +19,34 @@ public sealed class SearchCoordinator : IDisposable
     private IReadOnlyDictionary<string, string> _aliases = new Dictionary<string, string>();
     private string _resultSort = ResultRanker.Smart;
     private bool _recordHistory = true;
+    internal Func<ProviderContext, CancellationToken, Task<IReadOnlyList<LauncherResult>>>? TestOptionalQuery { get; set; }
+    private readonly SemaphoreSlim _windowSlot = new(1, 1);
+    private readonly SemaphoreSlim _bookmarkSlot = new(1, 1);
+
+    private async Task<IReadOnlyList<LauncherResult>> QueryOptionalAsync(
+        SemaphoreSlim slot, Func<CancellationToken, Task<IReadOnlyList<LauncherResult>>> query, CancellationToken token)
+    {
+        // One in-flight call per provider, no queue. A stuck bookmark read cannot
+        // consume the window provider's capacity or run synchronously on the UI.
+        if (!await slot.WaitAsync(0, token).ConfigureAwait(false)) return [];
+        try { return await Task.Run(() => query(token), token).ConfigureAwait(false); }
+        catch (OperationCanceledException) { return []; }
+        catch (Exception exception) { DiagnosticsService.Log("optional-search", exception); return []; }
+        finally { slot.Release(); }
+    }
 
     public SearchCoordinator()
     {
         _providers = [_builtIns, _system, _apps, _windows, _files, _bookmarks];
     }
 
-    internal SearchCoordinator(Func<string, int, CancellationToken, string, string, Task<EverythingSearchResponse>> queryFiles)
+    internal SearchCoordinator(Func<string, int, CancellationToken, string, string, Task<EverythingSearchResponse>> queryFiles,
+        Func<string, int, string, CancellationToken, string, Task<EverythingSearchResponse>>? fallbackQuery = null)
         : this()
     {
         // Test seam: wrap the injected file query behind the Everything provider surface.
         _files.TestQuery = queryFiles;
+        _files.TestFallbackQuery = fallbackQuery;
     }
 
     internal SearchCoordinator(Func<string, int, CancellationToken, string, Task<EverythingSearchResponse>> queryFiles)
@@ -102,7 +119,6 @@ public sealed class SearchCoordinator : IDisposable
             }
         }
 
-        var preparedQuery = FuzzyMatcher.Prepare(trimmed);
         var context = BuildContext(trimmed, maximumResults, filter, sortMode);
 
         var knownTask = Task.Run<IReadOnlyList<LauncherResult>>(() =>
@@ -110,52 +126,66 @@ public sealed class SearchCoordinator : IDisposable
                 ? _usage.Search(trimmed, filter, token) : [], token);
 
         var appTask = _apps.QueryAsync(context, token);
-        var windowTask = _windows.QueryAsync(context, token);
-        var bookmarkTask = _bookmarks.QueryAsync(context, token);
-        var fileTask = _files.QueryAsync(context, token);
-
-        var apps = await appTask.ConfigureAwait(false);
-        if (!fileTask.IsCompleted && apps.Count > 0)
-            publishApplications?.Invoke(new SearchBatch(ResultRanker.Rank(apps, sortMode, maximumResults, _usage.GetBoost),
-                UiStrings.Get("AppsReady"), false));
-
-        var files = await fileTask.ConfigureAwait(false);
-        token.ThrowIfCancellationRequested();
-        var known = await knownTask.ConfigureAwait(false);
-        var windows = await windowTask.ConfigureAwait(false);
-        var bookmarks = await bookmarkTask.ConfigureAwait(false);
-        if (filter == "All")
-            builtInResults = await builtInTask.ConfigureAwait(false);
-
-        var all = new List<LauncherResult>(
-            apps.Count + files.Count + known.Count + windows.Count + bookmarks.Count + builtInResults.Count + systemResults.Count);
-        all.AddRange(apps);
-        all.AddRange(known);
-        if (filter == "All")
+        using var optionalCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var windowTask = QueryOptionalAsync(_windowSlot, t => _windows.QueryAsync(context, t), optionalCancellation.Token);
+        var bookmarkTask = QueryOptionalAsync(_bookmarkSlot, t => TestOptionalQuery is { } query ? query(context, t) : _bookmarks.QueryAsync(context, t), optionalCancellation.Token);
+        try
         {
-            all.AddRange(builtInResults);
-            all.AddRange(systemResults);
-            all.AddRange(windows);
-            all.AddRange(bookmarks);
+            var fileTask = _files.QueryBatchAsync(context, token);
+
+            var apps = await appTask.ConfigureAwait(false);
+            if (!fileTask.IsCompleted && apps.Count > 0)
+                publishApplications?.Invoke(new SearchBatch(ResultRanker.Rank(apps, sortMode, maximumResults, _usage.GetBoost),
+                    UiStrings.Get("AppsReady"), false));
+
+            var fileBatch = await fileTask.ConfigureAwait(false);
+            var files = fileBatch.Results;
+            token.ThrowIfCancellationRequested();
+            var known = await knownTask.ConfigureAwait(false);
+            var optionalTasks = Task.WhenAll(windowTask, bookmarkTask);
+            if (!optionalTasks.IsCompleted)
+            {
+                var core = apps.Concat(files).Concat(known);
+                if (filter == "All") core = core.Concat(builtInResults).Concat(systemResults);
+                var uniqueCore = core.GroupBy(GroupKey, StringComparer.OrdinalIgnoreCase)
+                    .Select(group => ResultRanker.Rank(group, sortMode, 1, _usage.GetBoost)[0]).ToList();
+                publishApplications?.Invoke(new SearchBatch(ResultRanker.Rank(uniqueCore, sortMode, maximumResults, _usage.GetBoost),
+                    fileBatch.StatusText, fileBatch.Available, uniqueCore.Count > maximumResults || fileBatch.HasMore,
+                    fileBatch.TotalMatches));
+                try { await optionalTasks.WaitAsync(TimeSpan.FromMilliseconds(120), token).ConfigureAwait(false); }
+                catch (TimeoutException) { optionalCancellation.Cancel(); }
+            }
+            token.ThrowIfCancellationRequested();
+            var windows = windowTask.IsCompletedSuccessfully ? windowTask.Result : [];
+            var bookmarks = bookmarkTask.IsCompletedSuccessfully ? bookmarkTask.Result : [];
+
+            var all = new List<LauncherResult>(
+                apps.Count + files.Count + known.Count + windows.Count + bookmarks.Count + builtInResults.Count + systemResults.Count);
+            all.AddRange(apps);
+            all.AddRange(known);
+            if (filter == "All")
+            {
+                all.AddRange(builtInResults);
+                all.AddRange(systemResults);
+                all.AddRange(windows);
+                all.AddRange(bookmarks);
+            }
+            all.AddRange(files);
+
+            // Cross-provider ranking: score already includes usage boost; Smart mode
+            // no longer permanently pins Everything files above applications.
+            var unique = all
+                .GroupBy(GroupKey, StringComparer.OrdinalIgnoreCase)
+                .Select(group => ResultRanker.Rank(group, sortMode, 1, _usage.GetBoost)[0])
+                .ToList();
+            var ranked = ResultRanker.Rank(unique, sortMode, maximumResults, _usage.GetBoost);
+            var source = filter == "Application" ? "应用" : fileBatch.Available
+                ? fileBatch.StatusText : "仅应用与工具 · " + fileBatch.StatusText;
+            var hasMore = unique.Count > maximumResults || fileBatch.HasMore;
+            return new SearchBatch(ranked, source, fileBatch.Available, hasMore,
+                filter != "Application" && fileBatch.Available ? fileBatch.TotalMatches : null);
         }
-        all.AddRange(files);
-
-        // Cross-provider ranking: score already includes usage boost; Smart mode
-        // no longer permanently pins Everything files above applications.
-        var unique = all
-            .GroupBy(result => GroupKey(result), StringComparer.OrdinalIgnoreCase)
-            .Select(group => ResultRanker.Rank(group, sortMode, 1, _usage.GetBoost)[0])
-            .ToList();
-        var ranked = ResultRanker.Rank(unique, sortMode, maximumResults, _usage.GetBoost);
-
-        var source = filter switch
-        {
-            "Application" => "应用",
-            "File" or "Folder" when _files.PreferWindowsIndex => UiStrings.Get("WindowsIndex"),
-            _ => files.Count > 0 && !_files.PreferWindowsIndex ? "综合搜索" : "应用与工具"
-        };
-        var hasMore = unique.Count > maximumResults;
-        return new SearchBatch(ranked, source, true, hasMore, files.Count > 0 ? files.Count : null);
+        finally { optionalCancellation.Cancel(); }
     }
 
     public Task<SearchBatch> GetRecommendationsAsync(int maximumResults, CancellationToken token)

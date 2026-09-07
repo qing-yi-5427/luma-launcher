@@ -35,6 +35,8 @@ public sealed partial class MainWindow : Window
     private CancellationTokenSource? _idleMaintenanceCancellation;
     private HwndSource? _source;
     private HotkeyRegistration? _registration;
+    private CancellationTokenSource? _previewCancellation;
+    internal string? ActiveHotkey => _registration?.Active;
     private long _searchGeneration;
     private bool _allowClose;
     private bool _contextMenuOpen;
@@ -199,6 +201,7 @@ public sealed partial class MainWindow : Window
 
     public void HideLauncher()
     {
+        _previewCancellation?.Cancel();
         _composing = false;
         _searchCancellation?.Cancel();
         if (HelpOverlay is not null)
@@ -331,7 +334,7 @@ public sealed partial class MainWindow : Window
                 Dispatcher.Invoke(() =>
                 {
                     if (generation != _searchGeneration || token.IsCancellationRequested || preserveResults) return;
-                    ApplyBatch(partial, "文件搜索中…");
+                    ApplyBatch(partial, "正在补充搜索结果…", publishedPartial);
                     publishedPartial = true;
                     SetSearchPending(false);
                 }));
@@ -663,6 +666,7 @@ public sealed partial class MainWindow : Window
         if (!_fullResultsMode)
             return;
         _fullResultsMode = false;
+        _previewCancellation?.Cancel();
         _detailCancellation?.Cancel();
         ResultsPaneColumn.Width = new GridLength(1, GridUnitType.Star);
         DetailsDividerColumn.Width = new GridLength(0);
@@ -1069,6 +1073,7 @@ public sealed partial class MainWindow : Window
 
     private void ResultsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        _previewCancellation?.Cancel();
         if (ResultsList.SelectedItem is LauncherResult selected)
         {
             StatusText.Text = selected.Target;
@@ -1089,11 +1094,18 @@ public sealed partial class MainWindow : Window
 
     private async Task LoadSelectedPreviewAsync(LauncherResult selected)
     {
+        _previewCancellation?.Cancel();
+        _previewCancellation?.Dispose();
+        _previewCancellation = new CancellationTokenSource();
+        var token = _previewCancellation.Token;
         try
         {
-            var info = await _controller.LoadPreviewAsync(selected, CancellationToken.None);
-            if (info is null || !ReferenceEquals(ResultsList.SelectedItem, selected))
-                return;
+            await Task.Delay(140, token);
+            var info = await _controller.LoadPreviewAsync(selected, token);
+            token.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(ResultsList.SelectedItem, selected)) return;
+            DetailSkeleton.Visibility = Visibility.Collapsed;
+            if (info is null) return;
             DetailDescriptionText.Text = string.IsNullOrWhiteSpace(info.Description)
                 ? info.KindLabel
                 : $"{info.KindLabel} · {info.Description}";
@@ -1121,9 +1133,11 @@ public sealed partial class MainWindow : Window
             }
             DetailSkeleton.Visibility = Visibility.Collapsed;
         }
+        catch (OperationCanceledException) { }
         catch (Exception exception)
         {
             DiagnosticsService.Log("preview", exception);
+            if (!token.IsCancellationRequested) DetailSkeleton.Visibility = Visibility.Collapsed;
         }
     }
 
@@ -1232,6 +1246,7 @@ public sealed partial class MainWindow : Window
 
     private void ClearDetailPanel()
     {
+        _previewCancellation?.Cancel();
         DetailKindText.Text = "未选择结果";
         SearchHighlight.SetText(DetailLocationText, "—");
         DetailSizeText.Text = "—";
@@ -1401,6 +1416,9 @@ public sealed partial class MainWindow : Window
 
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
+        _previewCancellation?.Cancel();
+        _previewCancellation?.Dispose();
+        _controller.GameMode.Dispose();
         _idleMaintenanceCancellation?.Cancel();
         _idleMaintenanceCancellation?.Dispose();
         _searchCancellation?.Cancel();

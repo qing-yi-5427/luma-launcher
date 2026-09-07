@@ -86,6 +86,33 @@ Notes:
 
 MainWindow is the main maintainability hotspot, not a measured FPS issue.
 
+## DPI / scroll bench (2026-09-07)
+
+Command:
+
+```powershell
+dotnet run --project Tests/Luma.SmokeTests.csproj -c Release -- --dpi-scroll
+```
+
+Environment: Windows 11, system DPI 96 (100%), test host `PROCESS_DPI_AWARENESS=1` (SystemAware). Offscreen `RenderTargetBitmap` at 96/120/144/192 DPI; 512 synthetic results; virtualized ListBox scroll via `ScrollViewer.LineDown`.
+
+| Scale | measure first | measure p95 | render first | render p95 | scroll p95 | scroll avg |
+|---|---:|---:|---:|---:|---:|---:|
+| 100% | 70.87 ms | **0.10 ms** | 6.49 ms | 6.49 ms | **2.56 ms** | 0.89 ms |
+| 125% | 15.14 ms | 0.04 ms | 0.38 ms | 0.66 ms | 2.28 ms | 0.81 ms |
+| 150% | 17.65 ms | 0.42 ms | 6.15 ms | 0.63 ms | 2.31 ms | 0.77 ms |
+| 200% | 13.88 ms | 0.07 ms | 6.09 ms | 0.50 ms | **2.51 ms** | 0.74 ms |
+
+Interpretation:
+
+- Warm layout after first pass is **sub-millisecond** at every scale — virtualization is working.
+- Scroll p95 stays **≤ 2.6 ms**, well under a 16 ms frame budget at 60 Hz.
+- DPI scaling does **not** introduce a clear scroll cliff from 100% → 200% in this harness.
+- First measure/arrange is cold JIT + template build; not representative of hotkey-to-list latency.
+- This harness uses offscreen bitmap render + LineDown, not a composited DWM window with `AllowsTransparency`. Real desktop composition cost on low-end GPUs is still an open empirical question; numbers here bound **layout/scroll logic**, not GPU fill.
+
+Report CSV written next to the test binary as `dpi-scroll-report.csv`.
+
 ## Gate suggestions
 
 1. Keep CI hard gate: single-file ≤ 100 MB (already in `build.yml`).

@@ -7,6 +7,7 @@ AppDataPaths.DirectoryPath = Directory.CreateTempSubdirectory("Luma.Tests.").Ful
 LumaLauncher.App.IsTestHost = true;
 if (args.Contains("--render")) { LumaLauncher.Tests.PreviewHarness.Render(); return; }
 if (args.Contains("--preview")) { LumaLauncher.Tests.PreviewHarness.Run(); return; }
+if (args.Contains("--dpi-scroll")) { LumaLauncher.Tests.DpiScrollBench.Run(); return; }
 LumaLauncher.Tests.HighlightTests.Run();
 LumaLauncher.Tests.ReleaseRegressionTests.Run();
 await LumaLauncher.Tests.ReleaseRegressionTests.RunSearchAsync();

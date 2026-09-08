@@ -35,7 +35,7 @@ internal static class PreviewHarness
                     ((System.Windows.Controls.RowDefinition)main.FindName("ResultsRow")).Height = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
                     ((System.Windows.Controls.RowDefinition)main.FindName("FooterRow")).Height = new System.Windows.GridLength(38);
                     ((System.Windows.FrameworkElement)main.FindName("Footer")).Visibility = System.Windows.Visibility.Visible;
-                    ((System.Windows.FrameworkElement)main.FindName("EmptyText")).Visibility = System.Windows.Visibility.Collapsed;
+                    ((System.Windows.FrameworkElement)main.FindName("EmptyState")).Visibility = System.Windows.Visibility.Collapsed;
                     var list = (System.Windows.Controls.ListBox)main.FindName("ResultsList");
                     // Exercise the real SearchBox binding without scheduling any provider work.
                     var searchBox = (System.Windows.Controls.TextBox)main.FindName("SearchBox");

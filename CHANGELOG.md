@@ -1,15 +1,22 @@
 # Changelog
 
-## 0.5.0 (mimo)
+## 0.5.0 — 2026-09-08
+
+### Release validation
+- Reviewed the remote mimo hardening and local-results-first changes; merged after regression and live search validation.
+- Repair null language fields without discarding otherwise valid settings.
+- Fix dark settings navigation contrast and allow small-screen navigation scrolling; refresh the layout render harness after the empty-state redesign.
+- Preview decoding is cancellable between stages, concurrency-bounded, and cached by file identity; optional bookmarks and automatic preview are opt-in for new users.
+- Known limitations: unsigned Windows executable; Windows Index covers indexed locations only; Quick Switch depends on compatible native file dialogs.
 
 ### Added
-- Free-form global hotkey (Alt/Ctrl/Shift/Win + letter/digit/F-key), with presets in Settings
+- Custom global hotkey (Alt/Ctrl/Shift/Win + letter/digit/F-key), captured in Settings
 - Window switcher (search title / process name, Enter to activate)
 - System commands (lock, sleep, hibernate, shutdown, restart, recycle bin, Settings, …)
 - Browser bookmark search (Chrome / Edge / Brave)
 - Search history panel (`Ctrl+H`) and Tab autocomplete from recent queries
 - Multi-engine web search prefixes (`g`, `bd`, `gh`, `bili`, …) configurable in Settings
-- File preview in the details pane (images via capped Shell decode; metadata for other types)
+- File preview in the details pane (images via bounded WPF decoding; metadata for other types)
 - Game mode: pause the global hotkey while a fullscreen app is in front (`Ctrl+F12` manual toggle)
 - Windows Search (Indexing Service) fallback when Everything is unavailable
 - Safe update download: fetch release asset, verify SHA-256, stage a replace script (no silent overwrite)

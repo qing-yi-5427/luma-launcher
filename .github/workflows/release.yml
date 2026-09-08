@@ -9,6 +9,20 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate release version
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ($env:RELEASE_TAG -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$') {
+            throw "Invalid release tag: $env:RELEASE_TAG"
+          }
+          $baseVersion = ($env:RELEASE_TAG.Substring(1) -split '-', 2)[0]
+          [xml]$project = Get-Content Launcher.csproj -Raw
+          $projectVersion = [string]$project.Project.PropertyGroup.Version
+          if ($baseVersion -cne $projectVersion) {
+            throw "Tag version $baseVersion does not match project version $projectVersion"
+          }
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -30,7 +44,7 @@ jobs:
             publish/win-x64/Luma.exe.sha256
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
-          make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'true' }}
+          make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'legacy' }}
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

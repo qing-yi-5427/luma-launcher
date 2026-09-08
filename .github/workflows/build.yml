@@ -66,13 +66,14 @@ jobs:
           BRANCH: ${{ github.ref_name }}
           COMMIT_SHA: ${{ github.sha }}
           BUILD_NUMBER: ${{ github.run_number }}
+          BUILD_ATTEMPT: ${{ github.run_attempt }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           (cd release && sha256sum --check Luma.exe.sha256)
           short_sha="${COMMIT_SHA:0:7}"
-          tag="build-${BRANCH}-${BUILD_NUMBER}-${short_sha}"
-          title="Luma ${BRANCH} — build ${BUILD_NUMBER} (${short_sha})"
+          tag="build-${BRANCH}-${BUILD_NUMBER}-${BUILD_ATTEMPT}-${short_sha}"
+          title="Luma ${BRANCH} — build ${BUILD_NUMBER}.${BUILD_ATTEMPT} (${short_sha})"
           printf '%s\n' \
             "Automated Windows x64 single-file build from branch \`${BRANCH}\`." \
             "" \
@@ -83,12 +84,8 @@ jobs:
             "This is a development pre-release, not a stable release; it does not replace Latest." \
             "The executable retains the version declared in Launcher.csproj. Back up settings before testing." \
             "SHA-256 verifies download integrity, not a code-signing identity." > notes.md
-          if gh release view "$tag" >/dev/null 2>&1; then
-            # A rerun updates only this run's assets, never a moving branch tag.
-            gh release upload "$tag" release/Luma.exe release/Luma.exe.sha256 --clobber
-          else
-            gh release create "$tag" release/Luma.exe release/Luma.exe.sha256 \
-              --target "$COMMIT_SHA" --title "$title" --notes-file notes.md \
-              --prerelease --latest=false
-          fi
+          # Each attempt has its own tag; never overwrite previously published bytes.
+          gh release create "$tag" release/Luma.exe release/Luma.exe.sha256 \
+            --target "$COMMIT_SHA" --title "$title" --notes-file notes.md \
+            --prerelease --latest=false
           echo "Release: https://github.com/${GH_REPO}/releases/tag/${tag}" >> "$GITHUB_STEP_SUMMARY"

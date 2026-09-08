@@ -13,10 +13,11 @@ When this workflow configuration is present on the pushed branch, pushing to
 4. Only after successful validation, a separate write-enabled job downloads that
    exact artifact, checks its hash and creates a public GitHub **pre-release**.
 
-Tags are immutable per build: `build-<branch>-<run-number>-<short-commit>`. They do
+Tags are unique per attempt: `build-<branch>-<run-number>-<attempt>-<short-commit>`. They do
 not start with `v`, so they do not invoke the version-tag release workflow. Every
 release points to the exact tested commit; concurrent pushes cannot move a shared
-"latest branch" tag backwards. Rerunning a workflow replaces only that run's assets.
+"latest branch" tag backwards. Rerunning a workflow creates a new release and never
+overwrites a previous build's assets.
 Old build releases are retained; no automatic deletion is performed.
 
 These branch releases **never become Latest** and never bump the version inside
@@ -37,12 +38,14 @@ Pushing a `v*` tag runs **Release** as before:
 - `v0.5.0-rc.1` or `v0.5.0-mimo.1` -> pre-release, never Latest.
 
 The tag workflow builds/tests/publishes the tagged source and attaches the EXE and
-checksum. It does not merge branches. Use monotonically increasing stable version
+checksum. Before building, it validates the tag format and requires its numeric
+version to match `Launcher.csproj`. Stable releases use GitHub's version-based
+Latest selection rather than unconditionally replacing Latest.
+It does not merge branches. Use monotonically increasing stable version
 tags; do not republish an old stable tag as Latest.
 
 ## Branch rollout
 
-This configuration was introduced on `mimo`. It takes effect there as soon as
-pushed. **The unchanged main branch does not gain this behavior until the workflow
-change is separately merged or cherry-picked into main.** No mainline merge is
-performed as part of configuring branch releases.
+This configuration is integrated into `main`. The same behavior applies to `mimo`
+only after that branch contains these workflow changes. Publishing a build does
+not merge branches or change application versions.

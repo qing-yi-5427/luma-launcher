@@ -163,16 +163,18 @@
 
             <Grid Grid.Row="1" Margin="12,4">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="148"/>
+                    <ColumnDefinition Width="0.32*" MinWidth="76" MaxWidth="140"/>
                     <ColumnDefinition Width="12"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
                 <ListBox x:Name="SettingsNav" Grid.Column="0" Background="Transparent" BorderThickness="0"
                          SelectedIndex="0" SelectionChanged="SettingsNav_SelectionChanged"
-                         ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                         ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
+                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                            <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusStyle}"/>
                             <Setter Property="Padding" Value="12,10"/>
                             <Setter Property="Margin" Value="0,1"/>
                             <Setter Property="Template">
@@ -219,7 +221,7 @@
                                      GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
                                      LostKeyboardFocus="HotkeyBox_LostKeyboardFocus"
                                      ToolTip="点击后直接按下快捷键组合；Esc 取消"/>
-                            <TextBlock x:Name="HotkeyCaptureHint" Text="点击输入框后，直接按下你要用的组合键。Esc 取消。"
+                            <TextBlock x:Name="HotkeyCaptureHint" TextWrapping="Wrap" Text="点击输入框后，直接按下你要用的组合键。Esc 取消。"
                                        Foreground="{DynamicResource FaintTextBrush}" FontSize="11.5" Margin="2,5,0,0"/>
 
                             <TextBlock Text="界面语言" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" Margin="0,16,0,7"/>

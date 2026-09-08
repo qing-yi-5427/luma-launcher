@@ -35,6 +35,9 @@ internal static class HardeningTests
             "New users must opt into optional expensive features");
         var existing = JsonSerializer.Deserialize<AppSettings>("{\"EnableBookmarks\":true,\"EnablePreview\":true}")!.Normalize().Copy();
         Check(existing.EnableBookmarks && existing.EnablePreview, "Existing opt-ins were lost");
+        var nullableLanguage = JsonSerializer.Deserialize<AppSettings>("{\"Language\":null,\"Theme\":\"Sky\",\"RecordHistory\":false}")!.Normalize();
+        Check(nullableLanguage.Language == "zh-CN" && nullableLanguage.Theme == "Sky" && !nullableLanguage.RecordHistory,
+            "Null language must be repaired without losing other settings");
 
         var bookmarks = new BrowserBookmarkService();
         var loadedAt = DateTimeOffset.UtcNow;

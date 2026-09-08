@@ -98,7 +98,7 @@ public sealed class AppSettings
         AppFolders ??= string.Empty;
         CustomCommands ??= string.Empty;
         SearchEngines ??= string.Empty;
-        Language = Language.StartsWith("en", StringComparison.OrdinalIgnoreCase) ? "en-US" : "zh-CN";
+        Language = Language?.StartsWith("en", StringComparison.OrdinalIgnoreCase) == true ? "en-US" : "zh-CN";
         ResultSort = Services.ResultRanker.Normalize(ResultSort);
         if (string.IsNullOrWhiteSpace(WebSearchUrl) || !WebSearchUrl.Contains("{query}") ||
             !Uri.TryCreate(WebSearchUrl.Replace("{query}", "test"), UriKind.Absolute, out var uri) ||

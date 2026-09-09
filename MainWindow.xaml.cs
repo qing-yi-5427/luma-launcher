@@ -559,12 +559,10 @@ public sealed partial class MainWindow : Window
         FooterRow.Height = new GridLength(showBody ? 36 : 0);
         ResultsHost.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
         Footer.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
-        var row = ResultRowHeight + 2;
-        var resultArea = 34 + (resultCount > 0 ? Math.Min(PageSize, resultCount) * row + 8 : 64);
         var available = GetFullResultsSize();
         var targetHeight = _fullResultsMode
             ? available.Height
-            : showBody ? Math.Min(available.Height, Math.Min(ExpandedHeight, CompactHeight + resultArea + 36)) : CompactHeight;
+            : showBody ? Math.Min(available.Height, CalculateBodyHeight(resultCount)) : CompactHeight;
         var targetWidth = _fullResultsMode ? available.Width : Math.Min(CompactWidth, available.Width);
         if (_fullResultsMode)
         {
@@ -575,6 +573,21 @@ public sealed partial class MainWindow : Window
             DetailsDividerColumn.Width = new GridLength(showDetails ? 21 : 0);
         }
         AnimateWindowSize(targetWidth, targetHeight);
+    }
+
+    /// <summary>
+    /// Chrome (search 76) + filter chips + list/empty + footer 36.
+    /// Empty state needs ~120px so the icon and two lines of text are not clipped.
+    /// </summary>
+    private double CalculateBodyHeight(int resultCount)
+    {
+        const double chipRow = 34;
+        const double footer = 36;
+        var row = ResultRowHeight + 2;
+        var body = resultCount > 0
+            ? chipRow + Math.Min(PageSize, resultCount) * row + 10
+            : chipRow + 120;
+        return Math.Min(ExpandedHeight, CompactHeight + body + footer);
     }
 
     private void AnimateWindowSize(double targetWidth, double targetHeight)
@@ -702,8 +715,9 @@ public sealed partial class MainWindow : Window
             BeginAnimation(HeightProperty, null);
             Width = Math.Min(CompactWidth, GetFullResultsSize().Width);
             var showBody = _allResults.Count > 0 || SearchBox.Text.Length > 0;
-            var resultArea = 36 + (_results.Count > 0 ? Math.Min(PageSize, _results.Count) * 52 + 8 : 72);
-            Height = showBody ? Math.Min(GetFullResultsSize().Height, Math.Min(ExpandedHeight, CompactHeight + resultArea + 38)) : CompactHeight;
+            Height = showBody
+                ? Math.Min(GetFullResultsSize().Height, CalculateBodyHeight(_results.Count))
+                : CompactHeight;
         }
         SearchBox.Focus();
         Keyboard.Focus(SearchBox);

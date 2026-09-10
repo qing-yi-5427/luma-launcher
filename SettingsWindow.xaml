@@ -8,7 +8,7 @@
         TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"
         UseLayoutRounding="True" SnapsToDevicePixels="True">
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" CornerRadius="0" GlassFrameThickness="-1" ResizeBorderThickness="0"/>
+        <shell:WindowChrome CaptionHeight="0" CornerRadius="0" GlassFrameThickness="0" ResizeBorderThickness="0"/>
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
@@ -130,15 +130,7 @@
             </Setter>
         </Style>
         <!-- CheckBox style is inherited from App.xaml (LumaCheckBox); do not redeclare here. -->
-        <Style TargetType="TextBox">
-            <Setter Property="MinHeight" Value="36"/>
-            <Setter Property="Padding" Value="10,6"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-            <Setter Property="CaretBrush" Value="{DynamicResource AccentBrush}"/>
-            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/>
-        </Style>
+        <!-- TextBox/ContextMenu styles inherit from App.xaml. -->
     </Window.Resources>
 
     <Border CornerRadius="8" BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1"
@@ -174,14 +166,14 @@
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-                            <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusStyle}"/>
+                            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
                             <Setter Property="Padding" Value="12,10"/>
                             <Setter Property="Margin" Value="0,1"/>
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
                                         <Border x:Name="NavChrome" CornerRadius="{DynamicResource RadiusSm}" Padding="{TemplateBinding Padding}"
-                                                Background="Transparent">
+                                                Background="Transparent" BorderThickness="2" BorderBrush="Transparent">
                                             <ContentPresenter/>
                                         </Border>
                                         <ControlTemplate.Triggers>
@@ -192,6 +184,9 @@
                                                 <Setter TargetName="NavChrome" Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
                                                 <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
                                                 <Setter Property="FontWeight" Value="SemiBold"/>
+                                            </Trigger>
+                                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                                <Setter TargetName="NavChrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>

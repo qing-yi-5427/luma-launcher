@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Windows;
 using System.Windows.Interop;
 using LumaLauncher.Models;
@@ -14,8 +15,80 @@ public sealed partial class App : System.Windows.Application
     private MainWindow? _launcherWindow;
     private SettingsWindow? _settingsWindow;
 
+    /// <summary>
+    /// Single-file WPF ContextMenu/Popup probes Accessibility 4.0.0.0 for the
+    /// MSAA→UIA bridge. If that assembly is not resolvable, opening any menu
+    /// throws FileNotFoundException and takes the process down.
+    /// </summary>
+    private static void InstallAccessibilityResolver()
+    {
+        AppDomain.CurrentDomain.AssemblyResolve += (_, args) =>
+        {
+            if (!args.Name.StartsWith("Accessibility", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            foreach (var loaded in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (string.Equals(loaded.GetName().Name, "Accessibility", StringComparison.OrdinalIgnoreCase))
+                    return loaded;
+            }
+
+            try
+            {
+                return Assembly.Load(new AssemblyName("Accessibility"));
+            }
+            catch (Exception loadException)
+            {
+                DiagnosticsService.Log("accessibility-resolve", loadException);
+            }
+
+            var baseDir = Path.GetDirectoryName(Environment.ProcessPath);
+            if (!string.IsNullOrWhiteSpace(baseDir))
+            {
+                var local = Path.Combine(baseDir, "Accessibility.dll");
+                if (File.Exists(local))
+                {
+                    try { return Assembly.LoadFrom(local); }
+                    catch (Exception localException) { DiagnosticsService.Log("accessibility-local", localException); }
+                }
+            }
+
+            var root = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+            if (string.IsNullOrWhiteSpace(root))
+                root = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            var desktop = Path.Combine(root, "dotnet", "shared", "Microsoft.WindowsDesktop.App");
+            if (!Directory.Exists(desktop))
+                desktop = Path.Combine(root, "shared", "Microsoft.WindowsDesktop.App");
+            if (Directory.Exists(desktop))
+            {
+                try
+                {
+                    var dll = Directory.EnumerateFiles(desktop, "Accessibility.dll", SearchOption.AllDirectories)
+                        .OrderByDescending(File.GetLastWriteTimeUtc)
+                        .FirstOrDefault();
+                    if (dll is not null)
+                        return Assembly.LoadFrom(dll);
+                }
+                catch (Exception frameworkException)
+                {
+                    DiagnosticsService.Log("accessibility-framework", frameworkException);
+                }
+            }
+            return null;
+        };
+        try
+        {
+            _ = Assembly.Load(new AssemblyName("Accessibility"));
+        }
+        catch (Exception exception)
+        {
+            DiagnosticsService.Log("accessibility-preload", exception);
+        }
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        InstallAccessibilityResolver();
         if (IsTestHost) { base.OnStartup(e); return; }
         DiagnosticsService.Initialize(this);
         base.OnStartup(e);

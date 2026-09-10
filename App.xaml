@@ -262,16 +262,15 @@
             </Setter.Value></Setter>
         </Style>
 
-        <!-- Implicit styles so every popup/menu/textbox stays on-theme. -->
-        <Style TargetType="ContextMenu" BasedOn="{StaticResource LumaContextMenu}">
-            <Setter Property="ItemContainerStyle" Value="{StaticResource LumaMenuItem}"/>
-        </Style>
+        <!-- Implicit styles so every popup/menu/textbox stays on-theme.
+             Do NOT set ItemContainerStyle on ContextMenu: Separator is a different
+             container type than MenuItem and that combination throws on open. -->
+        <Style TargetType="ContextMenu" BasedOn="{StaticResource LumaContextMenu}"/>
         <Style TargetType="MenuItem" BasedOn="{StaticResource LumaMenuItem}"/>
         <Style TargetType="Separator" BasedOn="{StaticResource LumaMenuSeparator}"/>
 
         <ContextMenu x:Key="LumaEditMenu" x:Shared="False"
-                     Style="{StaticResource LumaContextMenu}"
-                     ItemContainerStyle="{StaticResource LumaMenuItem}">
+                     Style="{StaticResource LumaContextMenu}">
             <MenuItem Header="剪切" Command="ApplicationCommands.Cut" Style="{StaticResource LumaMenuItem}"/>
             <MenuItem Header="复制" Command="ApplicationCommands.Copy" Style="{StaticResource LumaMenuItem}"/>
             <MenuItem Header="粘贴" Command="ApplicationCommands.Paste" Style="{StaticResource LumaMenuItem}"/>

@@ -773,8 +773,17 @@ public sealed partial class MainWindow : Window
         var menu = CreateSortMenu();
         menu.PlacementTarget = SortButton;
         menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-        _contextMenuOpen = true;
-        menu.IsOpen = true;
+        try
+        {
+            _contextMenuOpen = true;
+            menu.IsOpen = true;
+        }
+        catch (Exception exception)
+        {
+            _contextMenuOpen = false;
+            DiagnosticsService.Log("sort-menu-open", exception);
+            StatusText.Text = "排序菜单打开失败，请查看日志";
+        }
     }
 
     internal void ChangeSort(string mode)
@@ -1056,9 +1065,19 @@ public sealed partial class MainWindow : Window
             AddMenuItem(menu, "从最近使用中移除", () => RemoveFromHistory(selected));
         }
         menu.Closed += (_, _) => _contextMenuOpen = false;
-        _contextMenuOpen = true;
         menu.PlacementTarget = ResultsList;
-        menu.IsOpen = true;
+        try
+        {
+            _contextMenuOpen = true;
+            menu.IsOpen = true;
+        }
+        catch (Exception exception)
+        {
+            // Single-file WPF can fail the Popup Accessibility probe; never take the process down.
+            _contextMenuOpen = false;
+            DiagnosticsService.Log("context-menu-open", exception);
+            StatusText.Text = "右键菜单打开失败，请查看日志";
+        }
     }
 
     private static void AddMenuItem(System.Windows.Controls.ContextMenu menu, string title, Action action)

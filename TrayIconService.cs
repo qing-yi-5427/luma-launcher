@@ -106,12 +106,19 @@ internal sealed class TrayIconService : IDisposable
         var dispatcher = System.Windows.Application.Current.Dispatcher;
         dispatcher.BeginInvoke(() =>
         {
-            SetForegroundWindow(_window);
-            // Rebuild the detached popup so theme changes made while it was closed
-            // cannot leave cached resource values from the previous appearance.
-            if (_menu is not null) _menu.IsOpen = false;
-            _menu = CreateMenu();
-            _menu.IsOpen = true;
+            try
+            {
+                SetForegroundWindow(_window);
+                // Rebuild the detached popup so theme changes made while it was closed
+                // cannot leave cached resource values from the previous appearance.
+                if (_menu is not null) _menu.IsOpen = false;
+                _menu = CreateMenu();
+                _menu.IsOpen = true;
+            }
+            catch (Exception exception)
+            {
+                DiagnosticsService.Log("tray-menu-open", exception);
+            }
         }, System.Windows.Threading.DispatcherPriority.Input);
     }
 

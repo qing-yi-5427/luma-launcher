@@ -261,5 +261,50 @@
                 </ControlTemplate>
             </Setter.Value></Setter>
         </Style>
+
+        <!-- Implicit styles so every popup/menu/textbox stays on-theme.
+             Do NOT set ItemContainerStyle on ContextMenu: Separator is a different
+             container type than MenuItem and that combination throws on open. -->
+        <Style TargetType="ContextMenu" BasedOn="{StaticResource LumaContextMenu}"/>
+        <Style TargetType="MenuItem" BasedOn="{StaticResource LumaMenuItem}"/>
+        <Style TargetType="Separator" BasedOn="{StaticResource LumaMenuSeparator}"/>
+
+        <ContextMenu x:Key="LumaEditMenu" x:Shared="False"
+                     Style="{StaticResource LumaContextMenu}">
+            <MenuItem Header="剪切" Command="ApplicationCommands.Cut" Style="{StaticResource LumaMenuItem}"/>
+            <MenuItem Header="复制" Command="ApplicationCommands.Copy" Style="{StaticResource LumaMenuItem}"/>
+            <MenuItem Header="粘贴" Command="ApplicationCommands.Paste" Style="{StaticResource LumaMenuItem}"/>
+            <MenuItem Header="全选" Command="ApplicationCommands.SelectAll" Style="{StaticResource LumaMenuItem}"/>
+        </ContextMenu>
+
+        <Style TargetType="TextBox">
+            <Setter Property="MinHeight" Value="36"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource StrokeBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource AccentSoftBrush}"/>
+            <Setter Property="SelectionTextBrush" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="ContextMenu" Value="{StaticResource LumaEditMenu}"/>
+        </Style>
+
+        <Style TargetType="ListBox">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        </Style>
+        <Style TargetType="ListBoxItem">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        </Style>
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        </Style>
     </Application.Resources>
 </Application>

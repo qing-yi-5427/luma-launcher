@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 — 2026-09-11
+
+### Fixed
+- Prevent context and tray menus from crashing single-file builds when WPF probes the Accessibility bridge.
+- Keep context menus, text editing menus, and keyboard focus indicators consistent with the active theme.
+- Reserve enough compact-window height for empty and loading states so their icon and guidance are not clipped.
+
 ## 0.5.0 — 2026-09-08
 
 ### Release validation

@@ -45,6 +45,8 @@ public sealed partial class MainWindow : Window
     internal string? ActiveHotkey => _registration?.Active;
     private long _searchGeneration;
     private bool _allowClose;
+    private bool _closeRequested;
+    private bool _shutdownStarted;
     private bool _contextMenuOpen;
     private string _activeFilter = "All";
     private string _batchStatus = string.Empty;
@@ -143,6 +145,7 @@ public sealed partial class MainWindow : Window
         FileActionColumn.Width = new GridLength(narrow ? 0 : 66);
         AppFilterButton.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
         FileFilterButton.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
+        HotkeyText.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
     }
 
     public HotkeyRegistration InitializeLauncher()
@@ -304,12 +307,18 @@ public sealed partial class MainWindow : Window
 
     public void ShutdownEverything()
     {
+        if (_shutdownStarted)
+            return;
+        _shutdownStarted = true;
         _searchCancellation?.Cancel();
         _search.ShutdownEverything();
     }
 
     public void CloseForExit()
     {
+        if (_closeRequested)
+            return;
+        _closeRequested = true;
         _allowClose = true;
         Close();
     }
@@ -599,7 +608,7 @@ public sealed partial class MainWindow : Window
         foreach (var button in new[] { AllFilterButton, AppFilterButton, FileFilterButton, FolderFilterButton })
         {
             var selected = string.Equals(button.Tag as string, _activeFilter, StringComparison.Ordinal);
-            button.SetResourceReference(BackgroundProperty, selected ? "AccentBrush" : "WindowBrush");
+            button.SetResourceReference(BackgroundProperty, selected ? "AccentBrush" : "LauncherMaterialBrush");
             button.SetResourceReference(ForegroundProperty, selected ? "SpotlightSelectionTextBrush" : "TextBrush");
             button.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
         }
@@ -1682,22 +1691,29 @@ public sealed partial class MainWindow : Window
 
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
+        _closeRequested = true;
+        // Closed can precede App.OnExit. Stop searches before disposing their token source.
+        ShutdownEverything();
         ThemeService.PaletteChanged -= UpdateLauncherMaterial;
         _glass?.Dispose();
         _focusRecovery.Stop();
         StopMotion();
         LauncherRoot.BeginAnimation(OpacityProperty, null);
-        _previewCancellation?.Cancel();
-        _previewCancellation?.Dispose();
+        CancelAndDispose(ref _previewCancellation);
         _controller.GameMode.Dispose();
-        _idleMaintenanceCancellation?.Cancel();
-        _idleMaintenanceCancellation?.Dispose();
-        _searchCancellation?.Cancel();
-        _searchCancellation?.Dispose();
-        _detailCancellation?.Cancel();
-        _detailCancellation?.Dispose();
+        CancelAndDispose(ref _idleMaintenanceCancellation);
+        CancelAndDispose(ref _searchCancellation);
+        CancelAndDispose(ref _detailCancellation);
         _search.Dispose();
         _hotkey.Unregister();
         _source?.RemoveHook(WindowProcedure);
+    }
+
+    private static void CancelAndDispose(ref CancellationTokenSource? source)
+    {
+        var cancellation = source;
+        source = null;
+        cancellation?.Cancel();
+        cancellation?.Dispose();
     }
 }

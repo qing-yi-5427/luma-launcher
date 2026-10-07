@@ -2,7 +2,7 @@ using LumaLauncher.Models;
 
 namespace LumaLauncher.Services.Providers;
 
-public sealed class EverythingFileProvider : ILumaProvider
+public sealed class EverythingFileProvider : ILumaProvider, IDisposable
 {
     private readonly EverythingSearchService _everything = new();
     private readonly WindowsIndexSearchService _windowsIndex = new();
@@ -27,6 +27,12 @@ public sealed class EverythingFileProvider : ILumaProvider
         _everything.EnsureRunningAsync(token);
 
     public void ShutdownClient() => _everything.ShutdownClient();
+
+    public void Dispose()
+    {
+        _everything.ShutdownClient();
+        _everything.Dispose();
+    }
 
     public Task InitializeAsync(CancellationToken token) => Task.CompletedTask;
 

@@ -5,7 +5,7 @@ public static class UiStrings
 {
     private static readonly Dictionary<string, string> Zh = new()
     {
-        ["SearchHint"] = "搜索应用、文件，= 计算，? 网页，win 窗口",
+        ["SearchHint"] = "搜索",
         ["HistoryTitle"] = "搜索历史",
         ["HistoryEmpty"] = "还没有搜索历史",
         ["ClearHistory"] = "清空历史",
@@ -34,7 +34,7 @@ public static class UiStrings
 
     private static readonly Dictionary<string, string> En = new()
     {
-        ["SearchHint"] = "Search apps & files · = calc · ? web · win windows",
+        ["SearchHint"] = "Search",
         ["HistoryTitle"] = "Search history",
         ["HistoryEmpty"] = "No search history yet",
         ["ClearHistory"] = "Clear history",

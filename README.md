@@ -58,7 +58,7 @@ dotnet build Launcher.csproj -c Release
 The signed `dll/Everything64.dll` from the official Everything SDK is copied
 beside `Luma.exe` at build time. See `THIRD_PARTY_NOTICES.md` for its license.
 
-The release executable is written to `bin/Release/net10.0-windows/Luma.exe`.
+The release executable is written to `bin/Release/net10.0-windows10.0.19041.0/Luma.exe`.
 
 ## Design preview
 

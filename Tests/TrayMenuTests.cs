@@ -119,6 +119,7 @@ internal static class TrayMenuTests
         settings.Close(); launcher.CloseForExit();
         VerifyFullResultsLayout();
         VerifySettingsSnapshot();
+        ShutdownLifecycleTests.Run();
         InteractionTests.Run();
     }
 

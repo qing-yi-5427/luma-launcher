@@ -269,7 +269,7 @@ public sealed class SearchCoordinator : IDisposable
     public void Dispose()
     {
         _icons.Trim(0);
-        _files.ShutdownClient();
+        _files.Dispose();
         _apps.Dispose();
         _clipboard.Dispose();
     }

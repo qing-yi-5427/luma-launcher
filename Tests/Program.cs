@@ -3,10 +3,13 @@ using LumaLauncher.Models;
 using System.Diagnostics;
 using System.IO;
 
+try
+{
 AppDataPaths.DirectoryPath = Directory.CreateTempSubdirectory("Luma.Tests.").FullName;
 LumaLauncher.App.IsTestHost = true;
+if (args.Contains("--test-error-exit")) throw new InvalidOperationException("Deliberate test host failure.");
 if (args.Contains("--render")) { LumaLauncher.Tests.PreviewHarness.Render(); return; }
-if (args.Contains("--preview")) { LumaLauncher.Tests.PreviewHarness.Run(); return; }
+if (args.Contains("--preview")) { LumaLauncher.Tests.PreviewHarness.Run(args.Contains("--test-preview-failure")); return; }
 if (args.Contains("--dpi-scroll")) { LumaLauncher.Tests.DpiScrollBench.Run(); return; }
 if (args.Contains("--glass-native")) { LumaLauncher.Tests.GlassNativeTests.Run(); return; }
 LumaLauncher.Tests.HighlightTests.Run();
@@ -176,6 +179,13 @@ LumaLauncher.Tests.TrayMenuTests.Run();
 
 Console.WriteLine($"PASS apps={apps.Count} index_ms={indexTimer.ElapsedMilliseconds} everything={everythingResult.Results.Count} combined={combined.Results.Count} search_p95_ms={p95}");
 return;
+}
+catch (Exception exception)
+{
+    Console.Error.WriteLine(exception);
+    Console.Error.Flush();
+    Environment.ExitCode = 1;
+}
 
 static void Require(bool condition, string message)
 {

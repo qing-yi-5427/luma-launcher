@@ -1,20 +1,15 @@
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
-using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 
 namespace LumaLauncher.Services;
 
-/// <summary>A visual surface that contributes one rounded piece to the launcher's native window region.</summary>
 internal readonly record struct GlassRegionPart(FrameworkElement Element, double RadiusDip);
 
-/// <summary>
-/// Requests Windows 11 Desktop Acrylic for an ordinary (non-layered) WPF HWND and
-/// clips the HWND to the separate launcher surfaces. DWM owns the background;
-/// this class does not sample the desktop or blur the application's own pixels.
-/// </summary>
+/// <summary>Keeps an input-transparent Composition backdrop behind a layered WPF window.</summary>
 internal sealed class WindowsGlassService : IDisposable
 {
     private readonly Window _window;
@@ -22,10 +17,11 @@ internal sealed class WindowsGlassService : IDisposable
     private readonly GlassRegionPart[] _parts;
     private HwndSource? _source;
     private IntPtr _handle;
-    private Color _originalTargetColor;
-    private string? _lastRegionKey;
+    private CompositionGlassHost? _host;
+    private string? _lastShapeKey;
     private bool _attached;
     private bool _disposed;
+    private bool _refreshQueued;
 
     internal WindowsGlassService(Window window, FrameworkElement root, params GlassRegionPart[] parts)
     {
@@ -36,8 +32,8 @@ internal sealed class WindowsGlassService : IDisposable
 
     internal bool IsAcrylicActive { get; private set; }
     internal bool IsDarkMode { get; private set; }
+    internal IntPtr BackdropHandle => _host?.Handle ?? IntPtr.Zero;
     internal int LastBackdropHResult { get; private set; } = unchecked((int)0x80004005);
-    internal int LastRegionResult { get; private set; }
     internal event Action<bool>? AcrylicStateChanged;
 
     internal void Attach()
@@ -47,10 +43,10 @@ internal sealed class WindowsGlassService : IDisposable
         _handle = new WindowInteropHelper(_window).EnsureHandle();
         _source = HwndSource.FromHwnd(_handle);
         if (_source?.CompositionTarget is null) return;
-        _originalTargetColor = _source.CompositionTarget.BackgroundColor;
         _attached = true;
         _root.LayoutUpdated += OnLayoutUpdated;
         _window.IsVisibleChanged += OnVisibleChanged;
+        _window.Activated += OnActivated;
         _source.AddHook(OnWindowMessage);
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         SystemParameters.StaticPropertyChanged += OnSystemParameterChanged;
@@ -60,38 +56,35 @@ internal sealed class WindowsGlassService : IDisposable
 
     internal void RefreshMaterial()
     {
-        if (!_attached || _source?.CompositionTarget is null) return;
-        bool active = false;
-        int backdrop = GlassNative.DwmBackdropNone;
-        if (Environment.OSVersion.Version.Build >= 22621 &&
+        if (!_attached || _disposed) return;
+        bool allowed = Environment.OSVersion.Version.Build >= 22621 &&
             !SystemParameters.HighContrast && SystemTransparencyEnabled() &&
             GlassNative.DwmIsCompositionEnabled(out var compositionEnabled) == 0 && compositionEnabled &&
-            (GlassNative.GetWindowLongPtr(_handle, -20).ToInt64() & GlassNative.WsExLayered) == 0)
+            (GlassNative.GetWindowLongPtr(_handle, -20).ToInt64() & GlassNative.WsExLayered) != 0;
+        if (allowed && _host is null)
         {
-            var fullClient = new GlassNative.Margins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
-            _source.CompositionTarget.BackgroundColor = Colors.Transparent;
-            int frameResult = GlassNative.DwmExtendFrameIntoClientArea(_handle, ref fullClient);
-            backdrop = GlassNative.DwmBackdropTransientWindow;
-            LastBackdropHResult = GlassNative.DwmSetWindowAttribute(
-                _handle, GlassNative.DwmSystemBackdropType, ref backdrop, sizeof(int));
-            int readResult = GlassNative.DwmGetWindowAttribute(
-                _handle, GlassNative.DwmSystemBackdropType, out int readBack, sizeof(int));
-            active = frameResult == 0 && LastBackdropHResult == 0 && readResult == 0 && readBack == backdrop;
+            try
+            {
+                _host = new CompositionGlassHost(_handle, _parts.Length);
+                _host.SetDarkMode(IsDarkMode);
+                LastBackdropHResult = _host.LastHostBackdropHResult;
+                _lastShapeKey = null;
+            }
+            catch (Exception exception) when (exception is COMException or Win32Exception or InvalidOperationException or TypeLoadException)
+            {
+                LastBackdropHResult = exception.HResult;
+                _host?.Dispose();
+                _host = null;
+            }
         }
-        if (!active)
+        else if (!allowed && _host is not null)
         {
-            backdrop = GlassNative.DwmBackdropNone;
-            LastBackdropHResult = GlassNative.DwmSetWindowAttribute(
-                _handle, GlassNative.DwmSystemBackdropType, ref backdrop, sizeof(int));
-            var noFrame = new GlassNative.Margins();
-            GlassNative.DwmExtendFrameIntoClientArea(_handle, ref noFrame);
-            _source.CompositionTarget.BackgroundColor = _originalTargetColor;
+            _host.Dispose();
+            _host = null;
+            _lastShapeKey = null;
         }
-
-        // A custom HRGN supplies the silhouette. DWM cannot auto-round region windows.
-        int noRound = GlassNative.DwmDoNotRound;
-        GlassNative.DwmSetWindowAttribute(
-            _handle, GlassNative.DwmWindowCornerPreference, ref noRound, sizeof(int));
+        bool active = _host is not null;
+        if (active) RefreshRegion();
         if (IsAcrylicActive == active) return;
         IsAcrylicActive = active;
         AcrylicStateChanged?.Invoke(active);
@@ -100,19 +93,18 @@ internal sealed class WindowsGlassService : IDisposable
     internal void SetDarkMode(bool dark)
     {
         IsDarkMode = dark;
-        if (!_attached || Environment.OSVersion.Version.Build < 22621) return;
-        int value = dark ? 1 : 0;
-        GlassNative.DwmSetWindowAttribute(
-            _handle, GlassNative.DwmUseImmersiveDarkMode, ref value, sizeof(int));
+        _host?.SetDarkMode(dark);
     }
 
     internal void RefreshRegion()
     {
-        if (!_attached || _source?.CompositionTarget is null) return;
+        if (!_attached || _disposed || _source?.CompositionTarget is null || _host is null) return;
+        _host.SyncWindow(_window.IsVisible);
         var scale = _source.CompositionTarget.TransformToDevice;
-        var shapes = new List<(int Left, int Top, int Right, int Bottom, int Radius)>();
-        foreach (var part in _parts)
+        var shapes = new GlassShape?[_parts.Length];
+        for (int index = 0; index < _parts.Length; index++)
         {
+            var part = _parts[index];
             if (!part.Element.IsVisible || part.Element.ActualWidth < 1 || part.Element.ActualHeight < 1)
                 continue;
             Rect bounds;
@@ -121,57 +113,21 @@ internal sealed class WindowsGlassService : IDisposable
                 bounds = part.Element.TransformToAncestor(_window)
                     .TransformBounds(new Rect(0, 0, part.Element.ActualWidth, part.Element.ActualHeight));
             }
-            catch (InvalidOperationException)
-            {
-                continue;
-            }
-            var upperLeft = scale.Transform(bounds.TopLeft);
-            var lowerRight = scale.Transform(bounds.BottomRight);
-            int left = (int)Math.Floor(upperLeft.X);
-            int top = (int)Math.Floor(upperLeft.Y);
-            int right = (int)Math.Ceiling(lowerRight.X);
-            int bottom = (int)Math.Ceiling(lowerRight.Y);
-            int radius = (int)Math.Round(part.RadiusDip * scale.M11);
-            if (right > left && bottom > top)
-                shapes.Add((left, top, right, bottom, Math.Max(1, radius)));
+            catch (InvalidOperationException) { continue; }
+            var topLeft = scale.Transform(bounds.TopLeft);
+            var bottomRight = scale.Transform(bounds.BottomRight);
+            int left = (int)Math.Floor(topLeft.X);
+            int top = (int)Math.Floor(topLeft.Y);
+            int right = (int)Math.Ceiling(bottomRight.X);
+            int bottom = (int)Math.Ceiling(bottomRight.Y);
+            if (right <= left || bottom <= top) continue;
+            shapes[index] = new GlassShape(left, top, right - left, bottom - top,
+                Math.Max(1, (int)Math.Round(part.RadiusDip * scale.M11)));
         }
-        if (shapes.Count == 0) return;
-        string key = string.Join(';', shapes.Select(static shape =>
-            $"{shape.Left},{shape.Top},{shape.Right},{shape.Bottom},{shape.Radius}"));
-        if (key == _lastRegionKey) return;
-
-        IntPtr region = GlassNative.CreateRectRgn(0, 0, 0, 0);
-        if (region == IntPtr.Zero) return;
-        try
-        {
-            foreach (var shape in shapes)
-            {
-                int diameter = shape.Radius * 2;
-                IntPtr piece = GlassNative.CreateRoundRectRgn(
-                    shape.Left, shape.Top, shape.Right, shape.Bottom, diameter, diameter);
-                if (piece == IntPtr.Zero) return;
-                try
-                {
-                    if (GlassNative.CombineRgn(region, region, piece, GlassNative.RgnOr) == 0)
-                        return;
-                }
-                finally
-                {
-                    GlassNative.DeleteObject(piece);
-                }
-            }
-            LastRegionResult = GlassNative.SetWindowRgn(_handle, region, true);
-            if (LastRegionResult != 0)
-            {
-                // SetWindowRgn takes ownership of the HRGN on success.
-                region = IntPtr.Zero;
-                _lastRegionKey = key;
-            }
-        }
-        finally
-        {
-            if (region != IntPtr.Zero) GlassNative.DeleteObject(region);
-        }
+        string key = string.Join(';', shapes.Select(static shape => shape?.ToString() ?? "hidden"));
+        if (key == _lastShapeKey) return;
+        _host.SetShapes(shapes);
+        _lastShapeKey = key;
     }
 
     private void OnLayoutUpdated(object? sender, EventArgs e)
@@ -181,18 +137,38 @@ internal sealed class WindowsGlassService : IDisposable
 
     private void OnVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
-        if (_window.IsVisible)
+        if (!_window.IsVisible)
         {
-            RefreshMaterial();
-            _window.Dispatcher.BeginInvoke(RefreshRegion, DispatcherPriority.Loaded);
+            _host?.SyncWindow(false);
+            return;
         }
+        RefreshMaterial();
+        if (!_window.Dispatcher.HasShutdownStarted)
+            _window.Dispatcher.BeginInvoke(() =>
+            {
+                _host?.SyncWindow(_window.IsVisible, forceZOrder: true);
+                RefreshRegion();
+            }, DispatcherPriority.Loaded);
+    }
+
+    private void OnActivated(object? sender, EventArgs e)
+    {
+        _host?.SyncWindow(_window.IsVisible, forceZOrder: true);
     }
 
     private IntPtr OnWindowMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        // WM_DPICHANGED / WM_DISPLAYCHANGE: WPF will re-layout after this message.
-        if ((message is 0x02E0 or 0x007E) && _window.IsVisible && !_window.Dispatcher.HasShutdownStarted)
-            _window.Dispatcher.BeginInvoke(RefreshRegion, DispatcherPriority.Loaded);
+        if (message is 0x0047 or 0x02E0 or 0x007E && _window.IsVisible &&
+            !_refreshQueued && !_window.Dispatcher.HasShutdownStarted)
+        {
+            _refreshQueued = true;
+            _window.Dispatcher.BeginInvoke(() =>
+            {
+                _refreshQueued = false;
+                if (message == 0x0047) _host?.SyncWindow(_window.IsVisible, forceZOrder: true);
+                RefreshRegion();
+            }, DispatcherPriority.Loaded);
+        }
         return IntPtr.Zero;
     }
 
@@ -204,12 +180,10 @@ internal sealed class WindowsGlassService : IDisposable
 
     private void OnSystemParameterChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if ((e.PropertyName is nameof(SystemParameters.HighContrast) or null) &&
-            !_window.Dispatcher.HasShutdownStarted)
-        {
-            if (_window.Dispatcher.CheckAccess()) RefreshMaterial();
-            else _window.Dispatcher.BeginInvoke(RefreshMaterial);
-        }
+        if (e.PropertyName is not (nameof(SystemParameters.HighContrast) or null) ||
+            _window.Dispatcher.HasShutdownStarted) return;
+        if (_window.Dispatcher.CheckAccess()) RefreshMaterial();
+        else _window.Dispatcher.BeginInvoke(RefreshMaterial);
     }
 
     private static bool SystemTransparencyEnabled()
@@ -219,11 +193,7 @@ internal sealed class WindowsGlassService : IDisposable
             using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
             return key?.GetValue("EnableTransparency") is not int value || value != 0;
         }
-        catch
-        {
-            // DWM itself still applies system policy, including battery saver.
-            return true;
-        }
+        catch { return true; }
     }
 
     public void Dispose()
@@ -233,9 +203,12 @@ internal sealed class WindowsGlassService : IDisposable
         if (!_attached) return;
         _root.LayoutUpdated -= OnLayoutUpdated;
         _window.IsVisibleChanged -= OnVisibleChanged;
+        _window.Activated -= OnActivated;
         _source?.RemoveHook(OnWindowMessage);
         SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
         SystemParameters.StaticPropertyChanged -= OnSystemParameterChanged;
+        _host?.Dispose();
+        _host = null;
         AcrylicStateChanged = null;
         _source = null;
         _attached = false;

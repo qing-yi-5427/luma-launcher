@@ -5,16 +5,13 @@
         services:SearchHighlight.Query="{Binding Text, ElementName=SearchBox}"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Luma" Icon="/Luma;component/Assets/Luma.ico" Width="660" Height="82"
-        WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="False"
+        WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True"
         Background="Transparent" ShowInTaskbar="False" Topmost="True"
         FontFamily="Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI" Foreground="{DynamicResource TextBrush}"
         TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         Deactivated="Window_Deactivated" PreviewKeyDown="Window_PreviewKeyDown"
         MouseLeftButtonDown="Window_MouseLeftButtonDown">
-    <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" CornerRadius="0" GlassFrameThickness="-1" ResizeBorderThickness="0" UseAeroCaptionButtons="False"/>
-    </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
         <Style x:Key="GhostFooterButton" TargetType="Button" BasedOn="{StaticResource QuietButton}">
@@ -150,22 +147,23 @@
                     <Border CornerRadius="32" Background="Transparent"
                             BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
                     <Grid Margin="21,0,15,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="25"
                                    Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center"/>
                         <Grid Grid.Column="1" Margin="0,0,5,0">
                             <TextBlock x:Name="SearchHint" Text="搜索"
                                        Foreground="{DynamicResource FaintTextBrush}" FontSize="27" VerticalAlignment="Center"
-                                       IsHitTestVisible="False"/>
+                                       TextTrimming="CharacterEllipsis" IsHitTestVisible="False"/>
                             <TextBox x:Name="SearchBox" Background="Transparent" BorderThickness="0"
                                      Foreground="{DynamicResource TextBrush}" CaretBrush="{DynamicResource AccentBrush}"
                                      FontFamily="Segoe UI Variable Display, Microsoft YaHei UI, Segoe UI" FontSize="27"
                                      VerticalContentAlignment="Center" Padding="0" Cursor="IBeam" TextChanged="SearchBox_TextChanged"
                                      AutomationProperties.Name="Luma 搜索"/>
                         </Grid>
-                        <TextBlock x:Name="HotkeyText" Grid.Column="1" Text="ALT SPACE" FontSize="10"
+                        <TextBlock x:Name="HotkeyText" Grid.Column="2" Text="ALT SPACE" FontSize="10"
                                    Foreground="{DynamicResource FaintTextBrush}" Opacity="0.6"
-                                   HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,3,6"
+                                   HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="10,0,3,6"
+                                   MaxWidth="95" TextTrimming="CharacterEllipsis"
                                    IsHitTestVisible="False"/>
                     </Grid>
                     </Border>

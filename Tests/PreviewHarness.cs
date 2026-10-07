@@ -35,9 +35,50 @@ internal static class PreviewHarness
                             Save((System.Windows.FrameworkElement)settings.Content, 740, 680, 1, $"settings-{section.Item2}-{theme}.png");
                         }
                     }
-                    var main = new MainWindow(new SettingsStore(), true);
+                    var renderStore = new SettingsStore();
+                    var renderSettings = renderStore.Current.Copy();
+                    renderSettings.Theme = theme;
+                    renderSettings.Language = "zh-CN";
+                    renderStore.Save(renderSettings);
+                    var main = new MainWindow(renderStore, true);
                     main.ChangeSort(ResultRanker.Smart);
                     ThemeService.Apply(theme);
+                    var idleRoot = (System.Windows.FrameworkElement)main.Content;
+                    var idleSearchBox = (System.Windows.Controls.TextBox)main.FindName("SearchBox");
+                    var idleHotkey = (System.Windows.FrameworkElement)main.FindName("HotkeyText");
+                    var idleHint = (System.Windows.Controls.TextBlock)main.FindName("SearchHint");
+                    if (idleHint.Text != "搜索")
+                        throw new InvalidOperationException("Chinese idle hint was replaced with the old long syntax explanation.");
+                    Save(idleRoot, 660, 82, 1, $"main-idle-{theme}.png");
+                    Save(idleRoot, 660, 82, 1.5, $"main-idle-{theme}-150pct.png");
+                    if (idleSearchBox.ActualWidth < 150 || idleHotkey.Visibility != System.Windows.Visibility.Visible)
+                        throw new InvalidOperationException("Normal-width search field or hotkey hint is unavailable.");
+                    var inputBounds = idleSearchBox.TransformToAncestor(idleRoot)
+                        .TransformBounds(new System.Windows.Rect(0, 0, idleSearchBox.ActualWidth, idleSearchBox.ActualHeight));
+                    var hotkeyBounds = idleHotkey.TransformToAncestor(idleRoot)
+                        .TransformBounds(new System.Windows.Rect(0, 0, idleHotkey.ActualWidth, idleHotkey.ActualHeight));
+                    if (inputBounds.Right > hotkeyBounds.Left)
+                        throw new InvalidOperationException("Search input overlaps the hotkey hint.");
+                    Save(idleRoot, 400, 82, 2, $"main-idle-{theme}-200pct.png");
+                    if (idleSearchBox.ActualWidth < 150 || idleHotkey.Visibility != System.Windows.Visibility.Collapsed)
+                        throw new InvalidOperationException("Narrow search must retain input space and hide its secondary hint.");
+                    Save(idleRoot, 340, 82, 2, $"main-idle-{theme}-340dip-200pct.png");
+                    if (idleSearchBox.ActualWidth < 120 || idleHotkey.Visibility != System.Windows.Visibility.Collapsed)
+                        throw new InvalidOperationException("Minimum-width search must keep a usable input field.");
+                    if (theme == ThemeService.AppleLight)
+                    {
+                        renderSettings = renderStore.Current.Copy();
+                        renderSettings.Language = "en-US";
+                        renderStore.Save(renderSettings);
+                        main.ApplySettings();
+                        if (idleHint.Text != "Search")
+                            throw new InvalidOperationException("English idle hint was replaced with the old long syntax explanation.");
+                        Save(idleRoot, 660, 82, 1, "main-idle-en-AppleLight.png");
+                        Save(idleRoot, 400, 82, 2, "main-idle-en-AppleLight-200pct.png");
+                        renderSettings.Language = "zh-CN";
+                        renderStore.Save(renderSettings);
+                        main.ApplySettings();
+                    }
                     var menu = main.CreateSortMenu();
                     Save(menu, 240, 350, 1, $"sort-menu-{theme}.png");
                     var trayMenu = TrayIconService.BuildMenu(() => { }, () => { }, () => Task.CompletedTask, () => { }, "Alt+Space", out _);
@@ -137,37 +178,70 @@ internal static class PreviewHarness
         if (failure is not null) throw failure;
     }
 
-    internal static void Run()
+    internal static void Run(bool simulateFailure = false)
     {
+        Exception? failure = null;
         var thread = new Thread(() =>
         {
-            var app = new App();
-            app.InitializeComponent();
-            Console.WriteLine("preview: application initialized");
-            var store = new SettingsStore();
-            store.Save(new AppSettings { EverythingLifecycle = "Connect", RecordHistory = false });
-            var main = new MainWindow(store, previewMode: true) { Title = "Luma · 验证预览", ShowInTaskbar = true };
-            Console.WriteLine("preview: main window created");
-            main.SettingsRequested += () =>
+            Dispatcher? dispatcher = null;
+            MainWindow? main = null;
+            try
             {
-                var settings = new SettingsWindow(store.Current.Copy());
-                settings.SettingsSaved += value => { store.Save(value); main.ApplySettings(); };
-                settings.Show();
-            };
-            main.Closed += (_, _) => Dispatcher.CurrentDispatcher.BeginInvokeShutdown(DispatcherPriority.Background);
-            main.IsVisibleChanged += (_, _) =>
+                dispatcher = Dispatcher.CurrentDispatcher;
+                dispatcher.UnhandledException += (_, e) =>
+                {
+                    failure ??= e.Exception;
+                    e.Handled = true;
+                    try { main?.CloseForExit(); }
+                    catch (Exception cleanupException) { failure ??= cleanupException; }
+                    dispatcher.BeginInvokeShutdown(DispatcherPriority.Background);
+                };
+                if (simulateFailure)
+                    throw new InvalidOperationException("Deliberate preview worker failure.");
+                var app = new App();
+                app.InitializeComponent();
+                Console.WriteLine("preview: application initialized");
+                var store = new SettingsStore();
+                store.Save(new AppSettings { EverythingLifecycle = "Connect", RecordHistory = false });
+                main = new MainWindow(store, previewMode: true) { Title = "Luma · 验证预览", ShowInTaskbar = true };
+                Console.WriteLine("preview: main window created");
+                main.SettingsRequested += () =>
+                {
+                    var settings = new SettingsWindow(store.Current.Copy());
+                    settings.SettingsSaved += value => { store.Save(value); main.ApplySettings(); };
+                    settings.Show();
+                };
+                main.Closed += (_, _) => Dispatcher.CurrentDispatcher.BeginInvokeShutdown(DispatcherPriority.Background);
+                main.IsVisibleChanged += (_, _) =>
+                {
+                    if (!main.IsVisible)
+                        Dispatcher.CurrentDispatcher.BeginInvoke(() => main.CloseForExit(), DispatcherPriority.Background);
+                };
+                main.InitializeLauncher();
+                Console.WriteLine("preview: launcher initialized");
+                main.ShowLauncher();
+                Console.WriteLine("preview: launcher shown");
+                Dispatcher.Run();
+            }
+            catch (Exception exception)
             {
-                if (!main.IsVisible)
-                    Dispatcher.CurrentDispatcher.BeginInvoke(() => main.CloseForExit(), DispatcherPriority.Background);
-            };
-            main.InitializeLauncher();
-            Console.WriteLine("preview: launcher initialized");
-            main.ShowLauncher();
-            Console.WriteLine("preview: launcher shown");
-            Dispatcher.Run();
+                failure ??= exception;
+            }
+            finally
+            {
+                try { main?.CloseForExit(); }
+                catch (Exception cleanupException) { failure ??= cleanupException; }
+                try
+                {
+                    if (dispatcher is { HasShutdownStarted: false })
+                        dispatcher.InvokeShutdown();
+                }
+                catch (Exception cleanupException) { failure ??= cleanupException; }
+            }
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         thread.Join();
+        if (failure is not null) throw new InvalidOperationException("Preview failed.", failure);
     }
 }

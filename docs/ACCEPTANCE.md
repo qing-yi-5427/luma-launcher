@@ -1,4 +1,23 @@
-# Mimo stable-mainline acceptance
+# Acceptance record
+
+## Luma 0.6.0 (2026-10-07)
+
+The user tried the redesigned launcher and confirmed that the interaction and
+visual result were acceptable. This includes the Spotlight-style search UI and
+glass appearance on the user's desktop. The release regression suite, offscreen
+layout renders and real-window input-queue comparison passed on the development
+machine. The separate checkerboard glass probe had passed earlier on an unlocked
+desktop; its last attempted rerun could not sample its own board because the
+Windows lock screen covered it, so that rerun is not counted as a new glass pass
+or a glass failure.
+
+Automated preview-hotkey checks cover registration, hide/show lifecycle and
+release without synthesizing physical keys. They do not independently measure
+physical Alt+Space delivery or precise input-to-screen latency. The older
+September checklist below is historical context, not a claim that 0.6.0 still
+awaits the user's overall design acceptance.
+
+## Historical mimo stable-mainline checklist (2026-09-07)
 
 ## Automated checks completed (2026-09-07)
 

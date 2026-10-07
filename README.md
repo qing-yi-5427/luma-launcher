@@ -1,225 +1,57 @@
 # Luma Launcher
 
-Luma is a compact Windows launcher for applications, files, quick calculations,
-web searches and personal commands. It uses the Everything SDK for file search
-and keeps its own lightweight application and usage indexes. It does not install
-or run a privileged indexing service.
+Luma 是 Windows 应用与文件启动器，也支持计算、网页搜索和常用命令。0.6.0 采用独立搜索胶囊、结果面板和侧栏式设置页。
 
-## Features
+## 下载与升级
 
-- Unified application, file and folder search with fuzzy and Pinyin-initial matching
-- Immediate application/tool results with a 100 ms cancellable file-search debounce;
-  Enter can search immediately
-- Fast 64-result preview, a 512-result expanded view, and repeatable Load more
-  (512 additional results per request; the selected sort and type filter are retained)
-- Provider-side application/file/folder filters; loaded counts and file-match lower
-  bounds are displayed separately, rather than calling a truncated list “all results”
-- Expandable full-results view with scrolling, file metadata and contextual actions
-- A persistent sort menu in both quick and expanded search: smart, relevance,
-  usage/favorites, name A–Z/Z–A, size small/large first, and modified newest/oldest
-- Favorites, recent usage ranking, application aliases and portable-app folders
-- Calculator (`= 12 * 8`), URLs, web search (`? query`) and custom commands
-- File actions: reveal, copy, open with, properties, terminal and administrator launch
-- Listary-style Quick Switch: invoke Luma from a standard Open/Save dialog, choose a
-  folder and press `Ctrl+G`
-- Apple-style Spotlight search and System Settings layout, with light/dark themes
-  and the four previous palettes still selectable
+**最新正式版：[GitHub Releases 下载 Luma.exe](https://github.com/qing-yi-5427/luma-launcher/releases/latest)**。适用于 Windows 10/11 x64；发布的单文件 EXE 已包含 .NET 运行时，无需安装程序。
 
-## Requirements
+1. 下载发布页中的 `Luma.exe`，放到固定目录，双击运行。可用同页的 `Luma.exe.sha256` 核对文件。
+2. 升级时先从旧版托盘图标选择“退出”，再用新版 `Luma.exe` 替换原位置的文件并启动。不要在旧进程仍运行时覆盖。
+3. 通常设置、收藏、历史和缓存在 `%LOCALAPPDATA%\LumaLauncher`，替换 EXE 不会删除这些数据。若启用便携模式（EXE 同目录有 `portable.txt` 或使用 `--portable`），数据改存于同目录的 `LumaData`；升级时请一并保留该目录。
 
-- Windows 10 or 11, x64
-- .NET 10 SDK to build
-- The regular edition of Everything running in the background (the Lite
-  edition does not expose IPC)
+旧配置会继续使用原主题。例如旧版的 `Light` 对应“素笺”，不会自动改成 Apple 风格。想使用新浅色外观，请在设置中选“Apple · 浅色”；想随系统切换，请选“自动（随系统日夜）”，并将日间/夜间配对设为 Apple 浅色/深色。
 
-Application search and built-in tools work without Everything. On first use,
-settings offers connection detection/retry and the official Everything download page.
-Install the regular (not Lite) edition and wait for its index to become available.
-Queries use asynchronous SDK replies with a three-second reply timeout and cancellation;
-application matches can appear before the file provider finishes.
+Luma 本体尚未进行 Authenticode 签名，Windows SmartScreen 可能提示确认。请从上述发布页下载并核对哈希。
 
-In managed mode, Luma starts an installed but stopped client with `-startup` and
-`-config` pointing to a copy under `%LOCALAPPDATA%\LumaLauncher`. It does not modify
-the user's original INI or take ownership of an existing process. A separate `-db`
-path also keeps the managed database under Luma's data directory. On exit it verifies
-the IPC window's process ID and sends the official IPC exit request only to its own
-client, including windowless clients. An unrelated client is never closed. A client
-already started by Luma remains Luma-owned if the setting is later changed to Connect.
-Connect-only mode never starts Everything. Settings supports automatic
-executable detection or a manual path. Reconnection is retried on later searches;
-startup attempts are throttled. This is configuration isolation, not a separately
-named Everything instance or separate Windows service.
+## 主要功能
 
-## Build
+- 应用、文件和文件夹统一搜索；支持模糊匹配、拼音首字母、排序、筛选和展开结果。
+- 计算、网页搜索、自定义命令、收藏、历史、文件操作及窗口切换。
+- 可选连接普通版 Everything 以搜索索引文件；不连接时仍可搜索应用和使用内建工具。Everything Lite 不提供所需 IPC。
+- 在标准打开/保存对话框中，可用 Quick Switch 快速切换到搜索结果文件夹。
 
-```powershell
-dotnet build Launcher.csproj -c Release
-```
+搜索排序、高亮、筛选范围和自定义格式详见 [搜索与快捷操作](docs/SEARCH_BEHAVIOR.md)。
 
-The signed `dll/Everything64.dll` from the official Everything SDK is copied
-beside `Luma.exe` at build time. See `THIRD_PARTY_NOTICES.md` for its license.
+## 快捷键
 
-The release executable is written to `bin/Release/net10.0-windows10.0.19041.0/Luma.exe`.
+| 操作 | 默认按键 |
+|---|---|
+| 显示或隐藏 | `Alt+Space`（可在设置中更改；若被占用，以界面显示的实际组合键为准） |
+| 选择并打开 | `↑` / `↓`、`Enter` |
+| 打开设置 | `Ctrl+,` |
+| 隐藏窗口 | `Esc`（展开视图中先返回） |
+| 在资源管理器中显示 | `Ctrl+Enter` |
+| 切换打开/保存对话框的文件夹 | `Ctrl+G` |
 
-## Design and interactive preview
+隐藏后 Luma 仍在托盘运行；彻底关闭请用托盘菜单的“退出”。
 
-The launcher uses a Spotlight-style search capsule and a separate results panel.
-On Windows 11 build 22621 or newer, an independent, non-activating Windows
-Composition window samples the desktop behind the rounded glass surfaces when
-system transparency is enabled. Windows 10, high contrast, and disabled
-transparency use solid surfaces.
+## 玻璃效果
 
-For an isolated interactive preview, double-click `Start-ApplePreview.cmd`. It
-uses temporary settings and registers a real global hotkey, normally `Alt+Space`
-or an available fallback if that combination is taken. Esc hides the preview
-while it keeps running; use the active hotkey or its tray icon to show it again.
-Use the preview tray menu's Exit command or `Ctrl+Shift+Q` to quit. The preview
-does not change the installed launcher's settings. See `APPLE_DESIGN_PREVIEW.md`
-for render commands and preview details.
+Windows 11 22H2（build 22621）及以上、系统透明效果开启且高对比模式关闭时，Luma 支持圆角玻璃背景。Windows 10、关闭透明效果或开启高对比模式时使用实色表面。技术说明见 [Windows 玻璃实现](docs/WINDOWS_GLASS.md)。
 
-## Single-file package
+## 开发与文档
+
+需要 .NET 10 SDK；仓库内的 Everything SDK DLL 会随构建复制。发布单文件：
 
 ```powershell
 dotnet publish Launcher.csproj -p:PublishProfile=SingleFile
 ```
 
-This creates one self-contained x64 executable at
-`publish/win-x64/Luma.exe`. It bundles the .NET desktop runtime and the
-Everything SDK DLL, so the target machine does not need a separate .NET
-installation. Everything itself is still required for indexed file search.
-
-## Search ordering and scope
-
-The **排序** button above results is available in quick and expanded views. Its
-label always shows the saved choice; the menu marks the current option. It shares
-`ResultSort` with Settings, including an already-open Settings window. Changing
-order restarts the query, resets the loading limit, and keeps the current type
-filter. Load more and expand continue using that order.
-
-- **Smart / relevance / usage and favorites** rank the recalled candidate set;
-  they do not promise the globally most relevant or most frequently used file.
-  Fuzzy/Pinyin fallback recall is available in these modes.
-- **Name / size / modified** pass Everything's SDK sort BEFORE the result limit.
-  File-system results therefore come from the full literal Everything match set,
-  not from sorting metadata for an earlier 64-result preview. These modes do not
-  add independent fuzzy/Pinyin fallback queries (use Everything syntax explicitly
-  if needed), or discard provider matches with a local fuzzy filter. Name uses
-  Everything's collation, which may differ from .NET's locale-aware app ordering.
-- In mixed **All** results, Everything matches retain provider order and come
-  **before applications and built-in suggestions**. These remaining local results
-  are ordered by name (descending only for name Z–A); the Application filter remains
-  available to reach them without paging through files. This is not a single
-  cross-provider global ordering. Explicit calculator/URL/command queries retain
-  their built-in behavior. Empty search remains recent usage, regardless of sort.
-- **Size** compares files only. Folders have no aggregate size: they follow all
-  matching files in name A–Z order in both directions; Folder-only is always A–Z.
-  Applications/tools have no indexed size/time and follow provider results. No
-  synchronous per-file filesystem I/O is used for sorting. Indexed file values
-  missing from Everything follow its native ordering, not an invented zero size.
-  **Modified** includes indexed files and folders in Everything's native order.
-- Expanding/Load more re-queries a larger top-N. Ties use Everything's native order;
-  an index changing between requests can naturally change the prefix. Counts and
-  has-more describe provider matches, not an immutable snapshot.
-
-### Search-hit highlighting
-
-Quick and expanded results share case-insensitive highlighting in names, paths,
-and the selected detail title/location. All literal occurrences take priority
-(`ddd` highlights the complete `ddd`, not unrelated individual `d`s), while
-preserving the original spelling and Unicode text elements. Whitespace-separated
-words are highlighted independently. Only complete, compact, ordered fuzzy matches
-of at least three characters are shown; repeated-letter queries do not use fuzzy
-highlighting. Highlighting is display-only and does not affect ranking or recall.
-
-Everything expressions (filters, operators, quotes, wildcards and grouping) are
-conservatively left unhighlighted rather than interpreting syntax as matched text;
-plain drive-qualified paths are supported. Pinyin initials, aliases and accent
-normalization can retrieve results without literal characters in the displayed
-text, so those transformations do not manufacture highlights. Theme accent color
-and semibold weight follow live theme changes. The existing detail location is a
-read-only TextBlock; its accessible text and the **复制路径** action are retained.
-
-## Keyboard
-
-- `Alt+Space`: show or hide Luma (configurable)
-- `Up` / `Down`: select a result
-- `Enter`: open
-- `Ctrl+Enter`: reveal in File Explorer
-- `Ctrl+Shift+Enter`: run as administrator
-- `Ctrl+C`: normal text copy while editing the search box; copy the selected path
-  when focus is in the result list (path copying is also available in actions)
-- `PageUp` / `PageDown`: open the full-results view or move by one result page
-- `Ctrl+G`: switch an Open/Save dialog to the selected folder
-- `Right`: caret movement in the search box, actions when focus is in results
-- `Ctrl+O`: actions
-- `Ctrl+,`: settings
-- `Escape`: leave the full-results view, then hide
-
-Drag the launcher from the search icon, shortcut badge, or other empty chrome.
-
-`Luma.exe --settings` opens the settings window directly.
-
-## Personalization formats
-
-Settings accepts one application alias per line:
-
-```text
-vsc=Visual Studio Code
-wx=微信
-```
-
-Custom commands use `keyword|title|executable|arguments|working directory`.
-`{query}` is replaced with text following the keyword:
-
-```text
-note|新建记事|notepad.exe|{query}|
-code|用 VS Code 打开|code.cmd|{query}|%USERPROFILE%
-```
-
-## Data, updates and verification
-
-Settings, history, favorites, the application cache and diagnostic logs live under
-`%LOCALAPPDATA%\LumaLauncher`. Settings imports validate/normalize legacy fields;
-future schema versions are preserved with a warning and saving disabled until upgrade.
-Export includes saved configuration, not history
-or favorites. Review imported custom commands before saving. Pause history recording
-or clear history (preserving favorites) in settings. Diagnostic timing entries contain
-elapsed time and counts, not search text; error logs can still include local paths.
-
-Update checks contact GitHub only on demand. Download the release from the project's
-release page, exit Luma, and replace `Luma.exe`; local data remains separate. The
-launcher is **not Authenticode-signed**: the SDK DLL's signature does not sign Luma.
-SmartScreen may warn. Verify provenance and published SHA-256 hashes where available.
-No automatic download, executable replacement, or elevation is performed.
+产物位于 `publish/win-x64/Luma.exe`。运行隔离测试：
 
 ```powershell
 dotnet run --project Tests/Luma.SmokeTests.csproj -c Release
-# Optional read-only integration against an ALREADY running regular Everything:
-dotnet run --project Tests/Luma.SmokeTests.csproj -c Release -- --integration
 ```
 
-Default tests use a temporary data directory and fake file provider, plus WPF layout
-checks; they require no installed Everything. Windows CI builds, runs these tests,
-publishes, checks that the artifact contains one EXE, and prints its SHA-256.
-`--render` writes light/dark offscreen PNGs (including 200% pixel-density samples)
-under the test executable's `renders` directory without showing/activating a window.
-These are layout samples, not verification of actual per-monitor DPI transitions.
-`--preview` opens an isolated interactive harness with its own global hotkey and
-tray icon (no auto-start/exit of Everything and no user configuration writes).
-It activates a window, so do not use it while another foreground workflow must
-remain undisturbed. Its automated hotkey check does not send physical keystrokes.
-
-Manual Windows acceptance should cover IME composition, caret/clipboard behavior,
-nonempty-query hide/wake, repeated Load more and each type filter, keyboard focus,
-screen-reader labels, system theme/high contrast, and 100/150/200% DPI. Quick Switch
-supports modern common file dialogs with a shell view and breadcrumb address bar;
-legacy/custom dialogs are intentionally rejected. Foreground checks and full
-SendInput counts reduce misdirected input, but do not make input delivery atomic or
-verify that the destination actually finished navigating. Elevated dialogs may
-reject injection through UIPI. Do not test lifecycle by killing a user's Everything.
-
-## Design notes
-
-The architecture decisions and open-source launcher research are documented in
-[`docs/OPEN_SOURCE_RESEARCH.md`](docs/OPEN_SOURCE_RESEARCH.md). The local
-before/after snapshot is in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+其他资料：[版本记录](CHANGELOG.md) · [独立交互预览](APPLE_DESIGN_PREVIEW.md) · [性能数据](docs/PERFORMANCE.md) · [验收记录](docs/ACCEPTANCE.md) · [发布流程](docs/AUTO_RELEASE.md)。

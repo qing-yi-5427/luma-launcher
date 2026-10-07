@@ -9,11 +9,13 @@
 
 ### Fixed
 - Keep the search text responsive while providers publish results, without repeatedly fading the result list during typing.
+- Recover search-box focus after hotkey activation with bounded retries, while respecting a deliberate switch to another app.
+- Keep the search progress pulse clipped inside the results panel.
 - Keep the interactive preview hotkey registered while Esc hides the window; the tray icon or active hotkey can show it again, and Exit releases the registration.
 - Harden shutdown and tray cleanup so repeated exit paths do not dispose launcher resources twice.
 
 ### Validation
-- Release smoke tests and real-window input-queue probes passed. The preview hotkey lifecycle test checks registration and release without sending physical keystrokes; actual key delivery still needs a user check.
+- Release smoke tests and real-window input-queue probes passed, and the user confirmed the interactive design trial. The preview hotkey lifecycle test checks registration and release without sending physical keystrokes; automation alone does not prove physical key delivery.
 
 ## 0.5.1 — 2026-09-11
 

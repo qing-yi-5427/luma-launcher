@@ -3,6 +3,34 @@
 Measured on the development machine. These numbers are regression indicators, not
 hardware-independent guarantees.
 
+## 0.6.0 real-window input queue comparison (2026-10-07)
+
+The same `--render-latency --minimal-probes` sequence ran on the same Windows
+machine before (`754045c`) and after (`6033cb7`) the launcher UI repair. It
+showed the real MainWindow with native glass, a 1,238-app index and Everything
+Connect, then made 16 edits including `s` → `ss` → `sss` → `ssss`, backspaces,
+and `chrome`. Both runs used the default eight visible results, AppleLight,
+150% DPI and WPF rendering tier 2. Minimal mode leaves out the always-on WPF
+Rendering callback and Dispatcher hooks, which themselves affected scheduling;
+one background thread posts a single outstanding Input-priority probe at a time.
+
+| Posted Input queue delay | Before `754045c` | After `6033cb7` |
+|---|---:|---:|
+| Cold P95 | 80.36 ms | 13.48 ms |
+| Warm P95 | 72.10 ms | 10.87 ms |
+| Cold maximum | 491.37 ms | 31.49 ms |
+| Warm maximum | 476.13 ms | 32.09 ms |
+
+The repair stopped changing the layered WPF HWND width and height on every
+CompositionTarget.Rendering callback; a result-height change now sets the native
+window size once. The same runs recorded roughly 570/591 layout events before
+versus 117/100 after (cold/warm). The patch also removed repeated result fades
+and two header buttons, so this A/B reflects the final UI patch rather than an
+isolated single-line experiment. A sampled trace identified synchronous
+`HwndTarget.OnResize` work in the old render loop as the main cause of queue
+starvation. These are dispatcher-post-to-dispatcher-execution measurements,
+**not** physical key-to-screen latency or DWM presentation timings.
+
 ## Input scheduling and same-host comparison (2026-09-07)
 
 Typed apps/tools now start immediately; only file queries use a cancellable

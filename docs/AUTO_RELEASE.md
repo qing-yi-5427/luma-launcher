@@ -44,6 +44,20 @@ Latest selection rather than unconditionally replacing Latest.
 It does not merge branches. Use monotonically increasing stable version
 tags; do not republish an old stable tag as Latest.
 
+## Manually publishing an already validated binary
+
+For 0.6.0, the self-contained `Luma.exe` and `Luma.exe.sha256` had already been
+validated from source commit `db41f6c`. A draft `v0.6.0` release was created with
+its tag target set to that exact commit, the same two files were attached, and
+the GitHub asset digest was checked against the local SHA-256 and installed EXE.
+Only then was the draft made public as a stable Latest release. This preserves
+the tested binary's provenance even though documentation-only commits follow
+the release source commit.
+
+For this manual path, do not push a separate `v*` tag to trigger a second tag
+workflow that rebuilds or replaces the already verified assets. Check the
+release's tag target, file hash and published status before announcing it.
+
 ## Branch rollout
 
 This configuration is integrated into `main`. The same behavior applies to `mimo`

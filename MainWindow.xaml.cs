@@ -398,6 +398,17 @@ public sealed partial class MainWindow : Window
         var token = _searchCancellation.Token;
         var generation = Interlocked.Increment(ref _searchGeneration);
 
+        // TextChanged runs in the input dispatcher turn. Yield before touching
+        // result layout so the newly typed glyph can paint first; older turns
+        // then fall through the generation check without rebuilding the list.
+        if (delayMilliseconds > 0)
+        {
+            SetSearchPending(true);
+            await Dispatcher.InvokeAsync(static () => { }, System.Windows.Threading.DispatcherPriority.Background);
+            if (generation != _searchGeneration || token.IsCancellationRequested)
+                return false;
+        }
+
         if (string.IsNullOrWhiteSpace(SearchBox.Text))
         {
             SetSearchPending(false);
@@ -416,8 +427,9 @@ public sealed partial class MainWindow : Window
             if (generation != _searchGeneration || !pendingQuery.Equals(SearchBox.Text.Trim(), StringComparison.Ordinal))
                 return false;
 
-            var keepExistingResults = (_fullResultsMode || preserveResults) && _allResults.Count > 0;
-            SetExpanded(keepExistingResults ? _results.Count : 0, showBody: true);
+            var keepExistingResults = _allResults.Count > 0 && ResultsSurface.Visibility == Visibility.Visible;
+            if (!keepExistingResults && ResultsSurface.Visibility != Visibility.Visible)
+                SetExpanded(0, showBody: true);
             if (!keepExistingResults)
             {
                 _allResults.Clear();
@@ -439,7 +451,8 @@ public sealed partial class MainWindow : Window
                     publishedPartial = true;
                     SetSearchPending(false);
                     firstActionable?.Invoke();
-                }), fileDelayMilliseconds: delayMilliseconds);
+                }, System.Windows.Threading.DispatcherPriority.Background), fileDelayMilliseconds: delayMilliseconds);
+            await Dispatcher.InvokeAsync(static () => { }, System.Windows.Threading.DispatcherPriority.Background);
             if (generation != _searchGeneration || !pendingQuery.Equals(SearchBox.Text.Trim(), StringComparison.Ordinal))
                 return false;
             if (token.IsCancellationRequested) return false;
@@ -470,12 +483,12 @@ public sealed partial class MainWindow : Window
 
     private void SetSearchPending(bool pending)
     {
+        if (_searchPending == pending) return;
         _searchPending = pending;
         ResultsHost.IsHitTestVisible = !pending;
         ResultsHost.Opacity = pending ? 0.55 : 1;
         if (pending)
         {
-            ResultsList.SelectedIndex = -1;
             if (_allResults.Count > 0)
                 StatusText.Text = "等待输入完成…";
         }
@@ -511,7 +524,8 @@ public sealed partial class MainWindow : Window
         if (_queryTimer.IsRunning && batch.Results.Count > 0)
         {
             _queryTimer.Stop();
-            DiagnosticsService.Log("first-results", $"input_to_results_ms={_queryTimer.ElapsedMilliseconds}; items={batch.Results.Count}");
+            var message = $"input_to_results_ms={_queryTimer.ElapsedMilliseconds}; items={batch.Results.Count}";
+            _ = Task.Run(() => DiagnosticsService.Log("first-results", message));
         }
     }
 
@@ -560,6 +574,8 @@ public sealed partial class MainWindow : Window
     {
         if (ProgressHost is null)
             return;
+        if ((ProgressHost.Visibility == Visibility.Visible) == visible)
+            return;
         ProgressHost.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         if (!visible)
         {
@@ -567,18 +583,18 @@ public sealed partial class MainWindow : Window
             return;
         }
         _progressTimer ??= new System.Windows.Threading.DispatcherTimer(
-            TimeSpan.FromMilliseconds(16), System.Windows.Threading.DispatcherPriority.Background,
+            TimeSpan.FromMilliseconds(32), System.Windows.Threading.DispatcherPriority.Background,
             (_, _) =>
             {
                 if (ProgressPulse is null)
                     return;
-                var x = ProgressPulse.Margin.Left + 6;
+                var x = ProgressPulseTransform.X + 12;
                 var max = Math.Max(0, ProgressHost.ActualWidth - ProgressPulse.Width);
                 if (x > max)
                     x = -ProgressPulse.Width;
-                ProgressPulse.Margin = new Thickness(x, 0, 0, 0);
+                ProgressPulseTransform.X = x;
             }, Dispatcher);
-        ProgressPulse.Margin = new Thickness(0, 0, 0, 0);
+        ProgressPulseTransform.X = 0;
         _progressTimer.Start();
     }
 
@@ -682,6 +698,12 @@ public sealed partial class MainWindow : Window
 
     private void AnimateWindowSize(double targetWidth, double targetHeight)
     {
+        if (_sizeMotionActive && Math.Abs(_widthSpring.Target - targetWidth) < 0.35 &&
+            Math.Abs(_heightSpring.Target - targetHeight) < 0.35)
+            return;
+        if (!_sizeMotionActive && Math.Abs(Width - targetWidth) < 0.35 &&
+            Math.Abs(Height - targetHeight) < 0.35)
+            return;
         if (!SystemParameters.ClientAreaAnimation || !IsVisible)
         {
             StopMotion(settle: true);

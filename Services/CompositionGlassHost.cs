@@ -142,7 +142,8 @@ internal sealed class CompositionGlassHost : IDisposable
         }
         if (!GlassNative.GetWindowRect(_front, out var bounds)) return;
         if (bounds.Width < 1 || bounds.Height < 1) return;
-        if (!_visible || forceZOrder || !_lastBounds.Equals(bounds))
+        bool displaced = forceZOrder && GlassNative.GetWindow(_front, 2) != Handle;
+        if (!_visible || displaced || !_lastBounds.Equals(bounds))
         {
             GlassNative.SetWindowPos(Handle, _front, bounds.Left, bounds.Top,
                 bounds.Width, bounds.Height, GlassNative.SwpNoActivate | GlassNative.SwpShowWindow);

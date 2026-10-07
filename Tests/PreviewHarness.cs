@@ -1,4 +1,6 @@
 using System.Threading;
+using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using LumaLauncher.Models;
 using LumaLauncher.Services;
@@ -7,6 +9,9 @@ namespace LumaLauncher.Tests;
 
 internal static class PreviewHarness
 {
+    private const string PreviewMutexName = @"Local\LumaLauncher.ApplePreview.Primary";
+    private const string PreviewActivationEventName = @"Local\LumaLauncher.ApplePreview.Activate";
+
     internal static void Render()
     {
         Exception? failure = null;
@@ -178,13 +183,84 @@ internal static class PreviewHarness
         if (failure is not null) throw failure;
     }
 
+    internal static void VerifyHotkeyLifecycle()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            MainWindow? window = null;
+            try
+            {
+                var app = new App();
+                app.InitializeComponent();
+                var store = new SettingsStore();
+                store.Save(new AppSettings
+                {
+                    Hotkey = "Ctrl+Alt+Shift+F24", EverythingLifecycle = "Connect",
+                    StartWithWindows = false, RecordHistory = false, RecordQueryHistory = false,
+                    EnableClipboardHistory = false
+                });
+                window = new MainWindow(store, previewMode: false)
+                {
+                    ShowActivated = false, ShowInTaskbar = false,
+                    Left = -32000, Top = -32000
+                };
+                var registration = window.InitializeLauncher();
+                if (registration.Active != store.Current.Hotkey || HotkeyService.TryProbe(registration.Active, out _))
+                    throw new InvalidOperationException("The isolated preview did not own its test hotkey.");
+                window.Show();
+                if (!window.IsVisible) throw new InvalidOperationException("Preview did not show.");
+                window.HideLauncher();
+                if (window.IsVisible || HotkeyService.TryProbe(registration.Active, out _))
+                    throw new InvalidOperationException("Hiding the preview released its hotkey or left it visible.");
+                window.Show();
+                if (!window.IsVisible) throw new InvalidOperationException("Hidden preview could not show again.");
+                window.CloseForExit();
+                if (!HotkeyService.TryProbe(registration.Active, out _))
+                    throw new InvalidOperationException("Closing the preview did not release its hotkey.");
+            }
+            catch (Exception exception) { failure = exception; }
+            finally
+            {
+                try { window?.CloseForExit(); }
+                catch (Exception cleanupException) { failure ??= cleanupException; }
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null) throw new InvalidOperationException("Preview hotkey lifecycle failed.", failure);
+        Console.WriteLine("PASS isolated preview registration survives hide/show and releases on exit");
+    }
+
     internal static void Run(bool simulateFailure = false)
+    {
+        using var activationEvent = new EventWaitHandle(false, EventResetMode.AutoReset, PreviewActivationEventName);
+        using var previewMutex = new Mutex(true, PreviewMutexName, out var isPrimary);
+        if (!isPrimary)
+        {
+            activationEvent.Set();
+            Console.WriteLine("preview: existing preview activated");
+            return;
+        }
+        try
+        {
+            RunPrimary(activationEvent, simulateFailure);
+        }
+        finally { previewMutex.ReleaseMutex(); }
+    }
+
+    private static void RunPrimary(EventWaitHandle activationEvent, bool simulateFailure)
     {
         Exception? failure = null;
         var thread = new Thread(() =>
         {
             Dispatcher? dispatcher = null;
             MainWindow? main = null;
+            SettingsWindow? settingsWindow = null;
+            TrayIconService? trayIcon = null;
+            RegisteredWaitHandle? activationWait = null;
+            var activationStopped = 0;
             try
             {
                 dispatcher = Dispatcher.CurrentDispatcher;
@@ -202,25 +278,91 @@ internal static class PreviewHarness
                 app.InitializeComponent();
                 Console.WriteLine("preview: application initialized");
                 var store = new SettingsStore();
-                store.Save(new AppSettings { EverythingLifecycle = "Connect", RecordHistory = false });
-                main = new MainWindow(store, previewMode: true) { Title = "Luma · 验证预览", ShowInTaskbar = true };
+                store.Save(new AppSettings
+                {
+                    EverythingLifecycle = "Connect", StartWithWindows = false,
+                    RecordHistory = false, RecordQueryHistory = false, EnableClipboardHistory = false
+                });
+                var launcher = new MainWindow(store, previewMode: false)
+                {
+                    Title = "Luma · Apple 预览", ShowInTaskbar = true
+                };
+                main = launcher;
                 Console.WriteLine("preview: main window created");
-                main.SettingsRequested += () =>
+                void ExitPreview()
                 {
-                    var settings = new SettingsWindow(store.Current.Copy());
-                    settings.SettingsSaved += value => { store.Save(value); main.ApplySettings(); };
-                    settings.Show();
-                };
-                main.Closed += (_, _) => Dispatcher.CurrentDispatcher.BeginInvokeShutdown(DispatcherPriority.Background);
-                main.IsVisibleChanged += (_, _) =>
+                    settingsWindow?.Close();
+                    launcher.CloseForExit();
+                }
+                launcher.SettingsRequested += () =>
                 {
-                    if (!main.IsVisible)
-                        Dispatcher.CurrentDispatcher.BeginInvoke(() => main.CloseForExit(), DispatcherPriority.Background);
+                    launcher.HideLauncher();
+                    if (settingsWindow is not null) { settingsWindow.Activate(); return; }
+                    settingsWindow = new SettingsWindow(store.Current.Copy(), launcher.ActiveHotkey);
+                    settingsWindow.SettingsSaved += value =>
+                    {
+                        value.EverythingLifecycle = "Connect";
+                        value.StartWithWindows = false;
+                        value.RecordHistory = false;
+                        value.RecordQueryHistory = false;
+                        value.EnableClipboardHistory = false;
+                        store.Save(value);
+                        launcher.ApplySettings();
+                    };
+                    settingsWindow.Closed += (_, _) => settingsWindow = null;
+                    settingsWindow.Show();
+                    settingsWindow.Activate();
                 };
-                main.InitializeLauncher();
-                Console.WriteLine("preview: launcher initialized");
-                main.ShowLauncher();
+                launcher.ExitRequested += ExitPreview;
+                launcher.PreviewKeyDown += (_, e) =>
+                {
+                    if (e.Key == Key.Q && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+                    {
+                        e.Handled = true;
+                        ExitPreview();
+                    }
+                };
+                launcher.Closed += (_, _) =>
+                {
+                    Interlocked.Exchange(ref activationStopped, 1);
+                    activationWait?.Unregister(null);
+                    trayIcon?.Dispose();
+                    launcher.TrayMessageHandler = null;
+                    settingsWindow?.Close();
+                    if (!dispatcher.HasShutdownStarted)
+                        dispatcher.BeginInvokeShutdown(DispatcherPriority.Background);
+                };
+                var registration = launcher.InitializeLauncher();
+                Console.WriteLine($"preview: requested hotkey={registration.Requested}; active hotkey={registration.Active}; error={registration.ErrorCode}");
+                trayIcon = new TrayIconService(new WindowInteropHelper(launcher).Handle,
+                    launcher.ToggleLauncher, launcher.OpenSettings, launcher.ReloadAppsAsync,
+                    ExitPreview, registration.Active);
+                launcher.TrayMessageHandler = trayIcon.HandleMessage;
+                launcher.HotkeyRegistrationChanged += updated => trayIcon?.UpdateHotkey(updated.Active);
+                activationWait = ThreadPool.RegisterWaitForSingleObject(activationEvent, (_, timedOut) =>
+                {
+                    if (timedOut || Volatile.Read(ref activationStopped) != 0) return;
+                    try
+                    {
+                        dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            if (Volatile.Read(ref activationStopped) == 0)
+                                launcher.ShowLauncher();
+                        }), DispatcherPriority.Background);
+                    }
+                    catch (Exception exception) { Console.Error.WriteLine($"preview activation: {exception}"); }
+                }, null, Timeout.Infinite, executeOnlyOnce: false);
+                launcher.ShowLauncher();
                 Console.WriteLine("preview: launcher shown");
+                Console.WriteLine("preview: Esc hides; hotkey or tray icon restores; tray menu Exit or Ctrl+Shift+Q exits.");
+                if (registration.UsedFallback)
+                {
+                    Console.Error.WriteLine($"Preview cannot use {registration.Requested}; active={registration.Active}, Win32 error={registration.ErrorCode}.");
+                    System.Windows.MessageBox.Show(
+                        $"{registration.Requested} 当前被占用。预览快捷键：{registration.Active}。\n正式版不会被关闭；也可点击托盘图标唤出预览。",
+                        "Luma · 预览快捷键", System.Windows.MessageBoxButton.OK,
+                        System.Windows.MessageBoxImage.Information);
+                }
                 Dispatcher.Run();
             }
             catch (Exception exception)
@@ -229,7 +371,13 @@ internal static class PreviewHarness
             }
             finally
             {
+                Interlocked.Exchange(ref activationStopped, 1);
+                activationWait?.Unregister(null);
+                try { settingsWindow?.Close(); }
+                catch (Exception cleanupException) { failure ??= cleanupException; }
                 try { main?.CloseForExit(); }
+                catch (Exception cleanupException) { failure ??= cleanupException; }
+                try { trayIcon?.Dispose(); }
                 catch (Exception cleanupException) { failure ??= cleanupException; }
                 try
                 {

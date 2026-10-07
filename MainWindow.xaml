@@ -397,10 +397,15 @@
             </Grid>
 
             <!-- Thin loading bar (Phase 5) -->
-            <Grid Grid.Row="2" Height="2" x:Name="ProgressHost" Visibility="Collapsed">
+            <Grid Grid.Row="2" Height="2" x:Name="ProgressHost" Visibility="Collapsed"
+                  Margin="17,0,17,0" ClipToBounds="True">
                 <Border Background="{DynamicResource SurfaceSubtleBrush}" CornerRadius="1"/>
                 <Border x:Name="ProgressPulse" Background="{DynamicResource AccentBrush}" CornerRadius="1"
-                        HorizontalAlignment="Left" Width="80" Opacity="0.85"/>
+                        HorizontalAlignment="Left" Width="80" Opacity="0.85">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="ProgressPulseTransform"/>
+                    </Border.RenderTransform>
+                </Border>
             </Grid>
 
             <!-- Footer -->

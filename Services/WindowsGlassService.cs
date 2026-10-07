@@ -18,16 +18,24 @@ internal sealed class WindowsGlassService : IDisposable
     private HwndSource? _source;
     private IntPtr _handle;
     private CompositionGlassHost? _host;
-    private string? _lastShapeKey;
+    private readonly GlassShape?[] _shapes;
+    private readonly GlassShape?[] _lastShapes;
+    private bool _hasLastShapes;
     private bool _attached;
     private bool _disposed;
     private bool _refreshQueued;
+    private bool _zOrderDirty;
+
+    internal int RegionScanCount { get; private set; }
+    internal int ShapeUpdateCount { get; private set; }
 
     internal WindowsGlassService(Window window, FrameworkElement root, params GlassRegionPart[] parts)
     {
         _window = window;
         _root = root;
         _parts = parts;
+        _shapes = new GlassShape?[parts.Length];
+        _lastShapes = new GlassShape?[parts.Length];
     }
 
     internal bool IsAcrylicActive { get; private set; }
@@ -44,7 +52,12 @@ internal sealed class WindowsGlassService : IDisposable
         _source = HwndSource.FromHwnd(_handle);
         if (_source?.CompositionTarget is null) return;
         _attached = true;
-        _root.LayoutUpdated += OnLayoutUpdated;
+        _root.SizeChanged += OnPartSizeChanged;
+        foreach (var part in _parts)
+        {
+            part.Element.SizeChanged += OnPartSizeChanged;
+            part.Element.IsVisibleChanged += OnPartVisibleChanged;
+        }
         _window.IsVisibleChanged += OnVisibleChanged;
         _window.Activated += OnActivated;
         _source.AddHook(OnWindowMessage);
@@ -68,7 +81,7 @@ internal sealed class WindowsGlassService : IDisposable
                 _host = new CompositionGlassHost(_handle, _parts.Length);
                 _host.SetDarkMode(IsDarkMode);
                 LastBackdropHResult = _host.LastHostBackdropHResult;
-                _lastShapeKey = null;
+                _hasLastShapes = false;
             }
             catch (Exception exception) when (exception is COMException or Win32Exception or InvalidOperationException or TypeLoadException)
             {
@@ -81,7 +94,7 @@ internal sealed class WindowsGlassService : IDisposable
         {
             _host.Dispose();
             _host = null;
-            _lastShapeKey = null;
+            _hasLastShapes = false;
         }
         bool active = _host is not null;
         if (active) RefreshRegion();
@@ -99,9 +112,10 @@ internal sealed class WindowsGlassService : IDisposable
     internal void RefreshRegion()
     {
         if (!_attached || _disposed || _source?.CompositionTarget is null || _host is null) return;
+        RegionScanCount++;
         _host.SyncWindow(_window.IsVisible);
         var scale = _source.CompositionTarget.TransformToDevice;
-        var shapes = new GlassShape?[_parts.Length];
+        Array.Clear(_shapes);
         for (int index = 0; index < _parts.Length; index++)
         {
             var part = _parts[index];
@@ -121,18 +135,34 @@ internal sealed class WindowsGlassService : IDisposable
             int right = (int)Math.Ceiling(bottomRight.X);
             int bottom = (int)Math.Ceiling(bottomRight.Y);
             if (right <= left || bottom <= top) continue;
-            shapes[index] = new GlassShape(left, top, right - left, bottom - top,
+            _shapes[index] = new GlassShape(left, top, right - left, bottom - top,
                 Math.Max(1, (int)Math.Round(part.RadiusDip * scale.M11)));
         }
-        string key = string.Join(';', shapes.Select(static shape => shape?.ToString() ?? "hidden"));
-        if (key == _lastShapeKey) return;
-        _host.SetShapes(shapes);
-        _lastShapeKey = key;
+        if (_hasLastShapes && _shapes.AsSpan().SequenceEqual(_lastShapes)) return;
+        _host.SetShapes(_shapes);
+        Array.Copy(_shapes, _lastShapes, _shapes.Length);
+        _hasLastShapes = true;
+        ShapeUpdateCount++;
     }
 
-    private void OnLayoutUpdated(object? sender, EventArgs e)
+    private void OnPartSizeChanged(object sender, SizeChangedEventArgs e) => QueueRegionRefresh();
+
+    private void OnPartVisibleChanged(object sender, DependencyPropertyChangedEventArgs e) => QueueRegionRefresh();
+
+    private void QueueRegionRefresh(bool forceZOrder = false)
     {
-        if (_window.IsVisible) RefreshRegion();
+        if (!_window.IsVisible || _window.Dispatcher.HasShutdownStarted) return;
+        _zOrderDirty |= forceZOrder;
+        if (_refreshQueued) return;
+        _refreshQueued = true;
+        _window.Dispatcher.BeginInvoke(() =>
+        {
+            _refreshQueued = false;
+            bool reorder = _zOrderDirty;
+            _zOrderDirty = false;
+            if (reorder) _host?.SyncWindow(_window.IsVisible, forceZOrder: true);
+            RefreshRegion();
+        }, DispatcherPriority.Loaded);
     }
 
     private void OnVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -158,17 +188,8 @@ internal sealed class WindowsGlassService : IDisposable
 
     private IntPtr OnWindowMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (message is 0x0047 or 0x02E0 or 0x007E && _window.IsVisible &&
-            !_refreshQueued && !_window.Dispatcher.HasShutdownStarted)
-        {
-            _refreshQueued = true;
-            _window.Dispatcher.BeginInvoke(() =>
-            {
-                _refreshQueued = false;
-                if (message == 0x0047) _host?.SyncWindow(_window.IsVisible, forceZOrder: true);
-                RefreshRegion();
-            }, DispatcherPriority.Loaded);
-        }
+        if (message is 0x0047 or 0x02E0 or 0x007E)
+            QueueRegionRefresh(forceZOrder: message == 0x0047);
         return IntPtr.Zero;
     }
 
@@ -201,7 +222,12 @@ internal sealed class WindowsGlassService : IDisposable
         if (_disposed) return;
         _disposed = true;
         if (!_attached) return;
-        _root.LayoutUpdated -= OnLayoutUpdated;
+        _root.SizeChanged -= OnPartSizeChanged;
+        foreach (var part in _parts)
+        {
+            part.Element.SizeChanged -= OnPartSizeChanged;
+            part.Element.IsVisibleChanged -= OnPartVisibleChanged;
+        }
         _window.IsVisibleChanged -= OnVisibleChanged;
         _window.Activated -= OnActivated;
         _source?.RemoveHook(OnWindowMessage);

@@ -211,7 +211,7 @@ internal static class TrayMenuTests
 
             leave.Invoke(launcher, [true]);
             launcher.UpdateLayout();
-            if (details.Visibility != Visibility.Collapsed || !Equals(more.Content, "展开"))
+            if (details.Visibility != Visibility.Collapsed || !Equals(more.Content, "查看全部"))
                 throw new InvalidOperationException("完整结果模式未正确收起");
         }
         finally

@@ -13,10 +13,10 @@ namespace LumaLauncher;
 
 public sealed partial class MainWindow : Window
 {
-    private const double CompactHeight = 76;
+    private const double CompactHeight = 82;
     private const double ExpandedHeight = 600;
-    private const double CompactWidth = 700;
-    private const double FullResultsWidth = 1040;
+    private const double CompactWidth = 660;
+    private const double FullResultsWidth = 960;
     private const double FullResultsHeight = 680;
     private const int PageSize = 8;
     private const int QuickSearchResultLimit = 64;
@@ -38,6 +38,7 @@ public sealed partial class MainWindow : Window
     private CancellationTokenSource? _detailCancellation;
     private CancellationTokenSource? _idleMaintenanceCancellation;
     private HwndSource? _source;
+    private WindowsGlassService? _glass;
     private HotkeyRegistration? _registration;
     private bool _hotkeyActivationPending;
     private CancellationTokenSource? _previewCancellation;
@@ -97,6 +98,8 @@ public sealed partial class MainWindow : Window
                 return activated && IsActive;
             }, HideLauncher);
         InitializeComponent();
+        ThemeService.PaletteChanged += UpdateLauncherMaterial;
+        UpdateLauncherMaterial();
         ResultsList.ItemsSource = _results;
         UpdateSortButton();
         UpdateFilterButtons();
@@ -132,6 +135,16 @@ public sealed partial class MainWindow : Window
     public event Action? ExitRequested;
     public event Action<HotkeyRegistration>? HotkeyRegistrationChanged;
 
+    private void LauncherRoot_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (AppActionColumn is null || FileActionColumn is null) return;
+        var narrow = e.NewSize.Width < 500;
+        AppActionColumn.Width = new GridLength(narrow ? 0 : 66);
+        FileActionColumn.Width = new GridLength(narrow ? 0 : 66);
+        AppFilterButton.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
+        FileFilterButton.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
+    }
+
     public HotkeyRegistration InitializeLauncher()
     {
         new WindowInteropHelper(this).EnsureHandle();
@@ -143,6 +156,7 @@ public sealed partial class MainWindow : Window
     public void ApplySettings()
     {
         ThemeService.Apply(_settings.Current.Theme);
+        _glass?.RefreshMaterial();
         UiStrings.SetCulture(_settings.Current.Language);
         SearchHint.Text = UiStrings.Get("SearchHint");
         var sortChanged = !Equals(SortButton.Tag, ResultRanker.Normalize(_settings.Current.ResultSort));
@@ -237,7 +251,7 @@ public sealed partial class MainWindow : Window
         SearchBox.SelectAll();
         if (_hotkeyActivationPending && !_previewMode)
             _focusRecovery.Start(previousForeground, new WindowInteropHelper(this).Handle, IsActive);
-        QuickSwitchHint.Visibility = _quickSwitch.HasTarget ? Visibility.Visible : Visibility.Collapsed;
+        QuickSwitchHint.Visibility = Visibility.Collapsed;
         AnimateShow(wasVisible);
         if (string.IsNullOrWhiteSpace(SearchBox.Text))
             _ = SearchCurrentTextAsync(0);
@@ -249,8 +263,8 @@ public sealed partial class MainWindow : Window
     {
         _focusRecovery.Stop();
         StopMotion(settle: true);
-        BeginAnimation(OpacityProperty, null);
-        Opacity = 1;
+        LauncherRoot.BeginAnimation(OpacityProperty, null);
+        LauncherRoot.Opacity = 1;
         _previewCancellation?.Cancel();
         _detailCancellation?.Cancel();
         _composing = false;
@@ -305,8 +319,30 @@ public sealed partial class MainWindow : Window
         var handle = new WindowInteropHelper(this).Handle;
         _source = HwndSource.FromHwnd(handle);
         _source.AddHook(WindowProcedure);
-        ApplyDwmStyling(handle);
+        _glass = new WindowsGlassService(this, LauncherRoot,
+            new GlassRegionPart(SearchCapsuleHost, 32),
+            new GlassRegionPart(AppFilterButton, 30),
+            new GlassRegionPart(FileFilterButton, 30),
+            new GlassRegionPart(HeaderMoreButton, 30),
+            new GlassRegionPart(ResultsSurface, 20),
+            new GlassRegionPart(HelpOverlay, 20));
+        _glass.AcrylicStateChanged += _ => UpdateLauncherMaterial();
+        _glass.Attach();
+        UpdateLauncherMaterial();
         ApplySettings();
+    }
+
+    private void UpdateLauncherMaterial()
+    {
+        if (Application.Current?.TryFindResource("WindowBrush") is not SolidColorBrush baseBrush)
+            return;
+        var color = baseBrush.Color;
+        var brightness = color.R * 0.2126 + color.G * 0.7152 + color.B * 0.0722;
+        _glass?.SetDarkMode(brightness < 128);
+        byte alpha = _glass?.IsAcrylicActive == true && !SystemParameters.HighContrast
+            ? (byte)(brightness < 128 ? 0xA6 : 0xAB)
+            : (byte)0xFF;
+        Resources["LauncherMaterialBrush"] = new SolidColorBrush(Color.FromArgb(alpha, color.R, color.G, color.B));
     }
 
     private IntPtr WindowProcedure(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -482,16 +518,18 @@ public sealed partial class MainWindow : Window
             : filtered.Skip(_pageIndex * PageSize).Take(PageSize);
         foreach (var result in visibleResults)
             _results.Add(result);
+        ResultsHeadingText.Text = string.IsNullOrWhiteSpace(SearchBox.Text) ? "最近使用" :
+            ResultRanker.Normalize(_settings.Current.ResultSort) is ResultRanker.Smart or ResultRanker.Relevance
+                ? "最佳匹配" : "搜索结果";
+        ResultCountText.Text = filtered.Count == 0 ? string.Empty : $"{filtered.Count} 项";
         ResultsList.SelectedIndex = _results.Count > 0 ? 0 : -1;
         ShowEmptyState(_results.Count == 0, emptyMessage,
-            _activeFilter != "All" ? "可点上方筛选切回「全部」" : "试试 Everything 语法或更短的关键词");
+            _activeFilter != "All" ? "可用筛选菜单切回「全部」" : "试试 Everything 语法或更短的关键词");
         ResultsList.Visibility = _results.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         UpdateSortButton();
-        MoreButton.Visibility = _fullResultsMode || filtered.Count > 0 || _hasMore
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        MoreButton.Content = _fullResultsMode ? "收起" : "展开";
-        LoadMoreButton.Visibility = _fullResultsMode && _hasMore ? Visibility.Visible : Visibility.Collapsed;
+        MoreButton.Visibility = Visibility.Collapsed;
+        MoreButton.Content = _fullResultsMode ? "收起" : "查看全部";
+        LoadMoreButton.Visibility = Visibility.Collapsed;
         StatusText.Text = filtered.Count == 0
             ? _batchStatus
             : $"{filtered.Count} 个结果{(_fileMatchCount is > 0 ? $" · 文件 ≥ {_fileMatchCount}" : "")}{(_hasMore ? " · 可继续加载" : "")} · {_batchStatus}";
@@ -561,10 +599,15 @@ public sealed partial class MainWindow : Window
         foreach (var button in new[] { AllFilterButton, AppFilterButton, FileFilterButton, FolderFilterButton })
         {
             var selected = string.Equals(button.Tag as string, _activeFilter, StringComparison.Ordinal);
-            button.SetResourceReference(BackgroundProperty, selected ? "SurfaceElevatedBrush" : "SurfaceSubtleBrush");
-            button.SetResourceReference(ForegroundProperty, selected ? "AccentBrush" : "MutedTextBrush");
+            button.SetResourceReference(BackgroundProperty, selected ? "AccentBrush" : "WindowBrush");
+            button.SetResourceReference(ForegroundProperty, selected ? "SpotlightSelectionTextBrush" : "TextBrush");
             button.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
         }
+        if (FilterMenuButton is not null)
+            FilterMenuButton.Content = _activeFilter switch
+            {
+                "Application" => "应用 ▾", "File" => "文件 ▾", "Folder" => "文件夹 ▾", _ => "筛选 ▾"
+            };
     }
 
     private async void ResultItem_Loaded(object sender, RoutedEventArgs e)
@@ -593,8 +636,9 @@ public sealed partial class MainWindow : Window
     private void SetExpanded(int resultCount, bool showBody)
     {
         ResultsRow.Height = new GridLength(showBody ? 1 : 0, showBody ? GridUnitType.Star : GridUnitType.Pixel);
-        FooterRow.Height = new GridLength(showBody ? 36 : 0);
+        FooterRow.Height = new GridLength(showBody ? 42 : 0);
         ResultsHost.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
+        ResultsSurface.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
         Footer.Visibility = showBody ? Visibility.Visible : Visibility.Collapsed;
         var available = GetFullResultsSize();
         var targetHeight = _fullResultsMode
@@ -613,13 +657,13 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Chrome (search 76) + filter chips + list/empty + footer 36.
+    /// Search capsule 82 + results heading + list/empty + footer 42.
     /// Empty state needs ~120px so the icon and two lines of text are not clipped.
     /// </summary>
     private double CalculateBodyHeight(int resultCount)
     {
-        const double chipRow = 34;
-        const double footer = 36;
+        const double chipRow = 42;
+        const double footer = 42;
         var row = ResultRowHeight + 2;
         var body = resultCount > 0
             ? chipRow + Math.Min(PageSize, resultCount) * row + 10
@@ -666,22 +710,25 @@ public sealed partial class MainWindow : Window
     {
         if (!SystemParameters.ClientAreaAnimation)
         {
-            BeginAnimation(OpacityProperty, null);
-            Opacity = 1;
+            LauncherRoot.BeginAnimation(OpacityProperty, null);
+            LauncherRoot.Opacity = 1;
             WindowTranslate.Y = 0;
+            _glass?.RefreshRegion();
             return;
         }
         if (!wasVisible)
         {
-            BeginAnimation(OpacityProperty, null);
-            Opacity = 0.9;
+            LauncherRoot.BeginAnimation(OpacityProperty, null);
+            LauncherRoot.Opacity = 0.9;
             _showSpring.Reset(-7);
             WindowTranslate.Y = -7;
+            _glass?.RefreshRegion();
         }
         _showSpring.Retarget(0);
         _showMotionActive = true;
         StartMotion();
-        BeginAnimation(OpacityProperty, new DoubleAnimation(Opacity, 1, TimeSpan.FromMilliseconds(110)));
+        LauncherRoot.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(LauncherRoot.Opacity, 1, TimeSpan.FromMilliseconds(110)));
     }
 
     private void StartMotion()
@@ -715,6 +762,7 @@ public sealed partial class MainWindow : Window
         {
             _showMotionActive = _showSpring.Step(dt);
             WindowTranslate.Y = _showSpring.Value;
+            _glass?.RefreshRegion();
         }
         if (!_sizeMotionActive && !_showMotionActive) StopMotion();
     }
@@ -730,7 +778,11 @@ public sealed partial class MainWindow : Window
                 Width = _widthSpring.Target;
                 Height = _heightSpring.Target;
             }
-            if (_showMotionActive) WindowTranslate.Y = 0;
+            if (_showMotionActive)
+            {
+                WindowTranslate.Y = 0;
+                _glass?.RefreshRegion();
+            }
         }
         _sizeMotionActive = false;
         _showMotionActive = false;
@@ -740,10 +792,71 @@ public sealed partial class MainWindow : Window
     {
         if (sender is not Button { Tag: string filter })
             return;
+        SelectFilter(_activeFilter == filter && filter != "All" ? "All" : filter);
+    }
+
+    private void SelectFilter(string filter)
+    {
         _activeFilter = filter;
         _fullResultLimit = FullSearchResultLimit;
         _pageIndex = 0;
         _ = SearchCurrentTextAsync(0);
+    }
+
+    private void FilterMenu_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu { Style = (Style)FindResource("LumaContextMenu") };
+        foreach (var (filter, label) in new[]
+            { ("All", "所有结果"), ("Application", "应用"), ("File", "文件"), ("Folder", "文件夹") })
+            AddMenuItem(menu, (filter == _activeFilter ? "✓  " : "    ") + label, () => SelectFilter(filter));
+        OpenActionMenu(menu, (Button)sender);
+    }
+
+    private void HeaderMore_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu { Style = (Style)FindResource("LumaContextMenu") };
+        if (!_searchPending && !_composing && ResultsList.SelectedItem is LauncherResult selected)
+        {
+            AddMenuItem(menu, "打开所选结果", () => ExecuteSelected(ModifierKeys.None));
+            AddMenuItem(menu, "复制路径", () => ResultExecutionService.CopyPath(selected));
+            if (selected.IsFileSystemItem) AddMenuItem(menu, "在文件资源管理器中显示", RevealSelected);
+            if (_quickSwitch.HasTarget && selected.Kind is LauncherResultKind.File or LauncherResultKind.Folder)
+                AddMenuItem(menu, "切换到此文件夹  Ctrl+G", () => _ = QuickSwitchSelectedAsync());
+            AddMenuItem(menu, _search.IsFavorite(selected) ? "取消收藏" : "加入收藏", () => ToggleFavorite(selected));
+            menu.Items.Add(new Separator { Style = (Style)FindResource("LumaMenuSeparator") });
+        }
+        if (!_fullResultsMode && (_allResults.Count > 0 || _hasMore))
+            AddMenuItem(menu, "查看全部结果", EnterFullResultsMode);
+        else if (_fullResultsMode)
+            AddMenuItem(menu, "收起结果", () => LeaveFullResultsMode());
+        if (_fullResultsMode && _hasMore)
+            AddMenuItem(menu, "加载更多结果", () => LoadMore_Click(this, new RoutedEventArgs()));
+        AddMenuItem(menu, "所有结果", () => SelectFilter("All"));
+        AddMenuItem(menu, "只看应用", () => SelectFilter("Application"));
+        AddMenuItem(menu, "只看文件", () => SelectFilter("File"));
+        AddMenuItem(menu, "只看文件夹", () => SelectFilter("Folder"));
+        menu.Items.Add(new Separator { Style = (Style)FindResource("LumaMenuSeparator") });
+        AddMenuItem(menu, "搜索历史", ToggleHistoryPanel);
+        AddMenuItem(menu, "快捷键帮助", ToggleHelpOverlay);
+        AddMenuItem(menu, "设置", OpenSettings);
+        OpenActionMenu(menu, (Button)sender);
+    }
+
+    private void OpenFooter_Click(object sender, RoutedEventArgs e) => ExecuteSelected(ModifierKeys.None);
+    private void FooterActions_Click(object sender, RoutedEventArgs e) => ShowActions(ActionMenuButton);
+
+    private void OpenActionMenu(ContextMenu menu, Button placement)
+    {
+        menu.Closed += (_, _) => _contextMenuOpen = false;
+        menu.PlacementTarget = placement;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        try { _contextMenuOpen = true; menu.IsOpen = true; }
+        catch (Exception exception)
+        {
+            _contextMenuOpen = false;
+            DiagnosticsService.Log("action-menu-open", exception);
+            StatusText.Text = "菜单打开失败，请查看日志";
+        }
     }
 
     private void MoreButton_Click(object sender, RoutedEventArgs e)
@@ -897,16 +1010,6 @@ public sealed partial class MainWindow : Window
 
     public event Action<string>? ResultSortChanged;
 
-    private static void ApplyDwmStyling(IntPtr handle)
-    {
-        // Window is AllowsTransparency + transparent background; the Border alone
-        // owns the rounded silhouette. Force DWM not to add a second rounded clip.
-        var corner = 1; // DWMWCP_DONOTROUND
-        NativeMethods.DwmSetWindowAttribute(handle, 33, ref corner, sizeof(int));
-        var backdrop = 0; // DWMSBT_NONE
-        NativeMethods.DwmSetWindowAttribute(handle, 38, ref backdrop, sizeof(int));
-    }
-
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (_contextMenuOpen || _composing || e.Key == Key.ImeProcessed) return;
@@ -947,7 +1050,7 @@ public sealed partial class MainWindow : Window
                 e.Handled = true;
                 return;
             }
-            if (!_fullResultsMode && MoreButton.Visibility == Visibility.Visible)
+            if (!_fullResultsMode && (_allResults.Count > 0 || _hasMore))
             {
                 EnterFullResultsMode();
                 e.Handled = true;
@@ -1114,7 +1217,7 @@ public sealed partial class MainWindow : Window
         HideLauncher();
     }
 
-    private void ShowActions()
+    private void ShowActions(Button? placement = null)
     {
         if (ResultsList.SelectedItem is not LauncherResult selected)
             return;
@@ -1149,7 +1252,10 @@ public sealed partial class MainWindow : Window
             AddMenuItem(menu, "从最近使用中移除", () => RemoveFromHistory(selected));
         }
         menu.Closed += (_, _) => _contextMenuOpen = false;
-        menu.PlacementTarget = ResultsList;
+        menu.PlacementTarget = placement is null ? ResultsList : placement;
+        menu.Placement = placement is null
+            ? System.Windows.Controls.Primitives.PlacementMode.MousePoint
+            : System.Windows.Controls.Primitives.PlacementMode.Bottom;
         try
         {
             _contextMenuOpen = true;
@@ -1458,6 +1564,8 @@ public sealed partial class MainWindow : Window
         Width = Math.Min(720, available.Width);
         Height = Math.Min(420, available.Height);
         PositionOnCursorMonitor();
+        UpdateLayout();
+        _glass?.RefreshRegion();
         SearchBox.Focus();
     }
 
@@ -1469,6 +1577,7 @@ public sealed partial class MainWindow : Window
         _helpOpen = false;
         // Restore the normal compact / results chrome size.
         SetExpanded(_results.Count, _allResults.Count > 0 || SearchBox.Text.Length > 0);
+        _glass?.RefreshRegion();
     }
 
     private void ToggleHelpOverlay()
@@ -1573,9 +1682,11 @@ public sealed partial class MainWindow : Window
 
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
+        ThemeService.PaletteChanged -= UpdateLauncherMaterial;
+        _glass?.Dispose();
         _focusRecovery.Stop();
         StopMotion();
-        BeginAnimation(OpacityProperty, null);
+        LauncherRoot.BeginAnimation(OpacityProperty, null);
         _previewCancellation?.Cancel();
         _previewCancellation?.Dispose();
         _controller.GameMode.Dispose();

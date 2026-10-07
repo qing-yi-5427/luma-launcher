@@ -63,6 +63,18 @@ public sealed class LauncherResult : INotifyPropertyChanged
         _ => ""
     };
 
+    public string IconBackground => Kind switch
+    {
+        LauncherResultKind.Application => "#FF6967ED",
+        LauncherResultKind.Folder => "#FF2799EA",
+        LauncherResultKind.File => "#FF7184E5",
+        LauncherResultKind.Bookmark or LauncherResultKind.Web => "#FF21A893",
+        LauncherResultKind.Window => "#FF8B6DE2",
+        LauncherResultKind.System => "#FF737A86",
+        LauncherResultKind.Calculation => "#FFF09A3C",
+        _ => "#FF5D8DAF"
+    };
+
     public bool CanRunAsAdministrator => Kind is LauncherResultKind.Application or LauncherResultKind.Command ||
                                            Path.GetExtension(Target).Equals(".exe", StringComparison.OrdinalIgnoreCase);
     public bool IsFileSystemItem => Kind is LauncherResultKind.Application or LauncherResultKind.File or LauncherResultKind.Folder;

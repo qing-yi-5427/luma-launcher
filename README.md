@@ -21,7 +21,8 @@ or run a privileged indexing service.
 - File actions: reveal, copy, open with, properties, terminal and administrator launch
 - Listary-style Quick Switch: invoke Luma from a standard Open/Save dialog, choose a
   folder and press `Ctrl+G`
-- Luma warm light/dark plus four Windows 11-inspired themes
+- Apple-style Spotlight search and System Settings layout, with light/dark themes
+  and the four previous palettes still selectable
 
 ## Requirements
 
@@ -58,6 +59,15 @@ The signed `dll/Everything64.dll` from the official Everything SDK is copied
 beside `Luma.exe` at build time. See `THIRD_PARTY_NOTICES.md` for its license.
 
 The release executable is written to `bin/Release/net10.0-windows/Luma.exe`.
+
+## Design preview
+
+On this branch, double-click `Start-ApplePreview.cmd` for an isolated interactive
+preview. It uses temporary settings, does not register the global hotkey, and
+exits when hidden with Esc or closed with Alt+F4. Windows 11 build 22621 or newer
+can supply native Desktop Acrylic when system transparency is enabled; older or
+high-contrast environments use solid surfaces. See `APPLE_DESIGN_PREVIEW.md` for
+render commands and the remaining desktop visual check.
 
 ## Single-file package
 

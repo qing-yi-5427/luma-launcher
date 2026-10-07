@@ -22,18 +22,28 @@ internal static class PreviewHarness
                 {
                     ThemeService.Apply(theme);
                     var settings = new SettingsWindow(new AppSettings { Theme = theme, EverythingLifecycle = "Connect" });
-                    Save((System.Windows.FrameworkElement)settings.Content, 660, 740, 1, $"settings-{theme}.png");
+                    Save((System.Windows.FrameworkElement)settings.Content, 740, 680, 1, $"settings-{theme}.png");
                     Save((System.Windows.FrameworkElement)settings.Content, 400, 360, 2, $"settings-{theme}-200pct.png");
                     ((System.Windows.Controls.ListBox)settings.FindName("SettingsNav")).SelectedIndex = 1;
-                    Save((System.Windows.FrameworkElement)settings.Content, 660, 740, 1, $"settings-appearance-{theme}.png");
+                    Save((System.Windows.FrameworkElement)settings.Content, 740, 680, 1, $"settings-appearance-{theme}.png");
+                    if (theme == ThemeService.AppleLight)
+                    {
+                        var nav = (System.Windows.Controls.ListBox)settings.FindName("SettingsNav");
+                        foreach (var section in new[] { (2, "search"), (3, "sources"), (4, "features"), (5, "privacy"), (6, "about") })
+                        {
+                            nav.SelectedIndex = section.Item1;
+                            Save((System.Windows.FrameworkElement)settings.Content, 740, 680, 1, $"settings-{section.Item2}-{theme}.png");
+                        }
+                    }
                     var main = new MainWindow(new SettingsStore(), true);
-                    main.ChangeSort(ResultRanker.SizeDescending);
+                    main.ChangeSort(ResultRanker.Smart);
                     ThemeService.Apply(theme);
                     var menu = main.CreateSortMenu();
                     Save(menu, 240, 350, 1, $"sort-menu-{theme}.png");
                     var trayMenu = TrayIconService.BuildMenu(() => { }, () => { }, () => Task.CompletedTask, () => { }, "Alt+Space", out _);
                     Save(trayMenu, 240, 250, 2, $"tray-menu-{theme}.png");
                     ((System.Windows.Controls.Grid)main.FindName("ResultsHost")).Visibility = System.Windows.Visibility.Visible;
+                    ((System.Windows.FrameworkElement)main.FindName("ResultsSurface")).Visibility = System.Windows.Visibility.Visible;
                     ((System.Windows.Controls.RowDefinition)main.FindName("ResultsRow")).Height = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star);
                     ((System.Windows.Controls.RowDefinition)main.FindName("FooterRow")).Height = new System.Windows.GridLength(38);
                     ((System.Windows.FrameworkElement)main.FindName("Footer")).Visibility = System.Windows.Visibility.Visible;
@@ -62,19 +72,26 @@ internal static class PreviewHarness
                     {
                         Title = entry.Title, Subtitle = entry.Subtitle,
                         Target = i == 0 ? @"C:\Program Files\Luma\Luma.exe" : @"C:\Work\Projects\Luma\" + entry.Title,
-                        Kind = entry.Kind, Score = 100 - i, IsFavorite = i == 0
+                        Kind = entry.Kind, Score = 100 - i, IsFavorite = i == 0,
+                        Icon = i == 0 ? new System.Windows.Media.Imaging.BitmapImage(
+                            new Uri("pack://application:,,,/Luma;component/Assets/Luma.ico")) : null
                     }).ToArray();
+                    ((System.Windows.Controls.TextBlock)main.FindName("ResultCountText")).Text = "8 项";
                     list.SelectedIndex = 0; // quick mode: no asynchronous metadata reads
                     SearchHighlight.SetText((System.Windows.Controls.TextBlock)main.FindName("DetailLocationText"), ((LauncherResult)list.SelectedItem).Target);
                     ((System.Windows.Controls.TextBlock)main.FindName("StatusText")).Text = "8 个结果 · 按 Enter 打开";
-                    ((System.Windows.FrameworkElement)main.FindName("MoreButton")).Visibility = System.Windows.Visibility.Visible;
-                    ((System.Windows.FrameworkElement)main.FindName("LoadMoreButton")).Visibility = System.Windows.Visibility.Visible;
-                    Save((System.Windows.FrameworkElement)main.Content, 700, 600, 1, $"main-quick-{theme}.png");
+                    Save((System.Windows.FrameworkElement)main.Content, 660, 610, 1, $"main-quick-{theme}.png");
+                    var titleBlock = FindResultTitle((System.Windows.DependencyObject)main.Content);
+                    if (titleBlock is null || !SearchHighlight.GetSelected(titleBlock) ||
+                        titleBlock.Inlines.OfType<System.Windows.Documents.Run>().Any(run =>
+                            run.Foreground is not System.Windows.Media.SolidColorBrush brush ||
+                            brush.Color != System.Windows.Media.Colors.White))
+                        throw new InvalidOperationException("Selected result text must remain readable on the blue highlight.");
                     ((System.Windows.Controls.ColumnDefinition)main.FindName("DetailsDividerColumn")).Width = new System.Windows.GridLength(21);
                     ((System.Windows.Controls.ColumnDefinition)main.FindName("DetailsPaneColumn")).Width = new System.Windows.GridLength(370);
                     ((System.Windows.FrameworkElement)main.FindName("DetailsDivider")).Visibility = System.Windows.Visibility.Visible;
                     ((System.Windows.FrameworkElement)main.FindName("DetailsPane")).Visibility = System.Windows.Visibility.Visible;
-                    Save((System.Windows.FrameworkElement)main.Content, 1040, 680, 1, $"main-{theme}.png");
+                    Save((System.Windows.FrameworkElement)main.Content, 960, 680, 1, $"main-{theme}.png");
                     ((System.Windows.Controls.ColumnDefinition)main.FindName("DetailsDividerColumn")).Width = new System.Windows.GridLength(0);
                     ((System.Windows.Controls.ColumnDefinition)main.FindName("DetailsPaneColumn")).Width = new System.Windows.GridLength(0);
                     ((System.Windows.FrameworkElement)main.FindName("DetailsDivider")).Visibility = System.Windows.Visibility.Collapsed;
@@ -100,6 +117,17 @@ internal static class PreviewHarness
                     encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
                     using var stream = System.IO.File.Create(System.IO.Path.Combine(output, name));
                     encoder.Save(stream);
+                }
+                static System.Windows.Controls.TextBlock? FindResultTitle(System.Windows.DependencyObject root)
+                {
+                    if (root is System.Windows.Controls.TextBlock block && SearchHighlight.GetText(block) == "Luma Design")
+                        return block;
+                    for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+                    {
+                        var found = FindResultTitle(System.Windows.Media.VisualTreeHelper.GetChild(root, i));
+                        if (found is not null) return found;
+                    }
+                    return null;
                 }
             }
             catch (Exception exception) { failure = exception; }

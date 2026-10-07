@@ -3,22 +3,26 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
-        <!-- ── Design tokens (default = InkTeal night) ─────────────────── -->
-        <SolidColorBrush x:Key="WindowBrush" Color="#0D1218"/>
-        <SolidColorBrush x:Key="PanelBrush" Color="#141B23"/>
-        <SolidColorBrush x:Key="PanelHoverBrush" Color="#1C2632"/>
-        <SolidColorBrush x:Key="PanelSelectedBrush" Color="#243444"/>
-        <SolidColorBrush x:Key="TextBrush" Color="#E6EEF5"/>
-        <SolidColorBrush x:Key="MutedTextBrush" Color="#8A9AAB"/>
-        <SolidColorBrush x:Key="FaintTextBrush" Color="#5A6B7C"/>
-        <SolidColorBrush x:Key="StrokeBrush" Color="#2A3644"/>
-        <SolidColorBrush x:Key="AccentBrush" Color="#3FD9B8"/>
-        <SolidColorBrush x:Key="AccentSoftBrush" Color="#333FD9B8"/>
-        <SolidColorBrush x:Key="SurfaceSubtleBrush" Color="#1C2632"/>
-        <SolidColorBrush x:Key="SurfaceElevatedBrush" Color="#243444"/>
+        <!-- ── Design tokens (initial = Apple Dark; ThemeService applies the saved theme) ── -->
+        <SolidColorBrush x:Key="WindowBrush" Color="#272729"/>
+        <SolidColorBrush x:Key="PanelBrush" Color="#323235"/>
+        <SolidColorBrush x:Key="PanelHoverBrush" Color="#3D3D40"/>
+        <SolidColorBrush x:Key="PanelSelectedBrush" Color="#49494D"/>
+        <SolidColorBrush x:Key="TextBrush" Color="#F5F5F7"/>
+        <SolidColorBrush x:Key="MutedTextBrush" Color="#C7C7CC"/>
+        <SolidColorBrush x:Key="FaintTextBrush" Color="#ABABB0"/>
+        <SolidColorBrush x:Key="StrokeBrush" Color="#505055"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="#0A84FF"/>
+        <SolidColorBrush x:Key="AccentSoftBrush" Color="#330A84FF"/>
+        <SolidColorBrush x:Key="SurfaceSubtleBrush" Color="#3D3D40"/>
+        <SolidColorBrush x:Key="SurfaceElevatedBrush" Color="#49494D"/>
         <SolidColorBrush x:Key="DangerBrush" Color="#F07178"/>
         <SolidColorBrush x:Key="SuccessBrush" Color="#7FD99A"/>
         <SolidColorBrush x:Key="HairlineBrush" Color="#66FFFFFF"/>
+        <SolidColorBrush x:Key="SpotlightSelectionBrush" Color="#007AFF"/>
+        <SolidColorBrush x:Key="SpotlightSelectionTextBrush" Color="#FFFFFF"/>
+        <SolidColorBrush x:Key="SwitchTrackBrush" Color="#636368"/>
+        <SolidColorBrush x:Key="SwitchThumbBrush" Color="#FFFFFF"/>
 
         <CornerRadius x:Key="RadiusSm">9</CornerRadius>
         <CornerRadius x:Key="RadiusMd">13</CornerRadius>
@@ -180,10 +184,11 @@
                             </Grid.ColumnDefinitions>
                             <Border x:Name="Box" Grid.Column="0" Width="36" Height="21" CornerRadius="11"
                                     VerticalAlignment="Center"
-                                    Background="{DynamicResource SurfaceSubtleBrush}"
+                                    Background="{DynamicResource SwitchTrackBrush}"
                                     BorderBrush="{DynamicResource StrokeBrush}" BorderThickness="1">
                                 <Border x:Name="Thumb" Width="15" Height="15" CornerRadius="8" Margin="2"
-                                        Background="{DynamicResource TextBrush}" HorizontalAlignment="Left"/>
+                                        Background="{DynamicResource SwitchThumbBrush}" BorderBrush="{DynamicResource StrokeBrush}"
+                                        BorderThickness="0.5" HorizontalAlignment="Left"/>
                             </Border>
                             <ContentPresenter Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center"
                                               Content="{TemplateBinding Content}"
@@ -197,7 +202,7 @@
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Box" Property="Background" Value="{DynamicResource AccentBrush}"/>
                                 <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-                                <Setter TargetName="Thumb" Property="Background" Value="{DynamicResource WindowBrush}"/>
+                                <Setter TargetName="Thumb" Property="Background" Value="{DynamicResource SwitchThumbBrush}"/>
                                 <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">

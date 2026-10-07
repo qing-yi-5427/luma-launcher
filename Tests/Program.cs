@@ -8,6 +8,7 @@ LumaLauncher.App.IsTestHost = true;
 if (args.Contains("--render")) { LumaLauncher.Tests.PreviewHarness.Render(); return; }
 if (args.Contains("--preview")) { LumaLauncher.Tests.PreviewHarness.Run(); return; }
 if (args.Contains("--dpi-scroll")) { LumaLauncher.Tests.DpiScrollBench.Run(); return; }
+if (args.Contains("--glass-native")) { LumaLauncher.Tests.GlassNativeTests.Run(); return; }
 LumaLauncher.Tests.HighlightTests.Run();
 LumaLauncher.Tests.MotionTests.VerifySpring();
 LumaLauncher.Tests.HotkeyReliabilityTests.Run();

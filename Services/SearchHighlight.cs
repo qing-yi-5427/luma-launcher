@@ -15,6 +15,14 @@ public static class SearchHighlight
     public static readonly DependencyProperty QueryProperty = DependencyProperty.RegisterAttached(
         "Query", typeof(string), typeof(SearchHighlight),
         new FrameworkPropertyMetadata(string.Empty, FrameworkPropertyMetadataOptions.Inherits, Refresh));
+    public static readonly DependencyProperty SelectedProperty = DependencyProperty.RegisterAttached(
+        "Selected", typeof(bool), typeof(SearchHighlight), new PropertyMetadata(false, Refresh));
+    public static readonly DependencyProperty MonochromeProperty = DependencyProperty.RegisterAttached(
+        "Monochrome", typeof(bool), typeof(SearchHighlight), new PropertyMetadata(false, Refresh));
+    public static bool GetSelected(DependencyObject target) => (bool)target.GetValue(SelectedProperty);
+    public static void SetSelected(DependencyObject target, bool value) => target.SetValue(SelectedProperty, value);
+    public static bool GetMonochrome(DependencyObject target) => (bool)target.GetValue(MonochromeProperty);
+    public static void SetMonochrome(DependencyObject target, bool value) => target.SetValue(MonochromeProperty, value);
     public static string GetText(DependencyObject target) => (string)target.GetValue(TextProperty);
     public static void SetText(DependencyObject target, string value) => target.SetValue(TextProperty, value);
     public static string GetQuery(DependencyObject target) => (string)target.GetValue(QueryProperty);
@@ -34,7 +42,10 @@ public static class SearchHighlight
         {
             if (range.Start > position) block.Inlines.Add(new Run(text[position..range.Start]));
             var run = new Run(text.Substring(range.Start, range.Length)) { FontWeight = FontWeights.SemiBold };
-            run.SetResourceReference(TextElement.ForegroundProperty, "AccentBrush");
+            if (GetSelected(block))
+                run.SetResourceReference(TextElement.ForegroundProperty, "SpotlightSelectionTextBrush");
+            else if (!GetMonochrome(block))
+                run.SetResourceReference(TextElement.ForegroundProperty, "AccentBrush");
             block.Inlines.Add(run);
             position = range.Start + range.Length;
         }

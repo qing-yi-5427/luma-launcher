@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Interop;
+using System.Windows.Media;
 using LumaLauncher.Models;
 using LumaLauncher.Services;
 
@@ -11,6 +11,7 @@ public sealed partial class SettingsWindow : Window
     private readonly string _originalTheme;
     private string _webSearchUrl;
     private readonly CancellationTokenSource _lifetime = new();
+    private WindowsGlassService? _glass;
     private bool _saved;
 
     private readonly string? _activeHotkey;
@@ -21,13 +22,21 @@ public sealed partial class SettingsWindow : Window
         _originalTheme = settings.Theme;
         _webSearchUrl = settings.WebSearchUrl;
         InitializeComponent();
-        Width = Math.Min(660, Math.Max(400, SystemParameters.WorkArea.Width - 32));
-        Height = Math.Min(740, Math.Max(320, SystemParameters.WorkArea.Height - 32));
+        ThemeService.PaletteChanged += UpdateSidebarMaterial;
+        UpdateSidebarMaterial();
+        Width = Math.Min(740, Math.Max(400, SystemParameters.WorkArea.Width - 32));
+        Height = Math.Min(680, Math.Max(320, SystemParameters.WorkArea.Height - 32));
         foreach (var (mode, label) in ResultRanker.Options)
             ResultSortBox.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = label, Tag = mode });
         LoadControls(settings);
         VersionText.Text = $"Luma {UpdateService.CurrentVersion} · Windows x64";
-        SourceInitialized += (_, _) => ApplyDwmStyling();
+        SourceInitialized += (_, _) =>
+        {
+            _glass = new WindowsGlassService(this, SettingsRoot, new GlassRegionPart(SettingsFrame, 14));
+            _glass.AcrylicStateChanged += _ => UpdateSidebarMaterial();
+            _glass.Attach();
+            UpdateSidebarMaterial();
+        };
         ShowSection("General");
     }
 
@@ -35,6 +44,21 @@ public sealed partial class SettingsWindow : Window
     {
         if (SettingsNav?.SelectedItem is System.Windows.Controls.ListBoxItem { Tag: string tag })
             ShowSection(tag);
+    }
+
+    private void SettingsRoot_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (SettingsSidebarColumn is null || SidebarBackdrop is null) return;
+        var narrow = e.NewSize.Width < 600;
+        var width = narrow ? 108 : 190;
+        SettingsSidebarColumn.Width = new GridLength(width);
+        SidebarBackdrop.Width = width;
+        SettingsRightBackdrop.Margin = new Thickness(width, 0, 0, 0);
+        var labelWidth = narrow ? 95 : 138;
+        HotkeyLabelColumn.Width = new GridLength(labelWidth);
+        LanguageLabelColumn.Width = new GridLength(labelWidth);
+        DensityLabelColumn.Width = new GridLength(labelWidth);
+        HotkeyCaptureHint.Margin = new Thickness(labelWidth, 0, 0, 8);
     }
 
     private void ShowSection(string tag)
@@ -281,6 +305,8 @@ public sealed partial class SettingsWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        ThemeService.PaletteChanged -= UpdateSidebarMaterial;
+        _glass?.Dispose();
         _lifetime.Cancel();
         if (!_saved)
             ThemeService.Apply(_originalTheme);
@@ -551,12 +577,14 @@ public sealed partial class SettingsWindow : Window
             DragMove();
     }
 
-    private void ApplyDwmStyling()
+    private void UpdateSidebarMaterial()
     {
-        var handle = new WindowInteropHelper(this).Handle;
-        var corner = 1; // DWMWCP_DONOTROUND — Border owns the rounded shape
-        NativeMethods.DwmSetWindowAttribute(handle, 33, ref corner, sizeof(int));
-        var backdrop = 0; // DWMSBT_NONE
-        NativeMethods.DwmSetWindowAttribute(handle, 38, ref backdrop, sizeof(int));
+        if (Application.Current?.TryFindResource("SurfaceSubtleBrush") is not SolidColorBrush brush)
+            return;
+        var color = brush.Color;
+        _glass?.SetDarkMode(color.R * 0.2126 + color.G * 0.7152 + color.B * 0.0722 < 128);
+        byte alpha = _glass?.IsAcrylicActive == true && !SystemParameters.HighContrast ? (byte)0xAE : (byte)0xFF;
+        Resources["SettingsSidebarMaterialBrush"] = new SolidColorBrush(
+            Color.FromArgb(alpha, color.R, color.G, color.B));
     }
 }

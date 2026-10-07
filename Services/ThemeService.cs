@@ -5,6 +5,7 @@ namespace LumaLauncher.Services;
 
 public static class ThemeService
 {
+    public static event Action? PaletteChanged;
     public const string Auto = "Auto";
     public const string InkTeal = "InkTeal";
     public const string Dusk = "Dusk";
@@ -48,6 +49,10 @@ public static class ThemeService
         Set("SurfaceElevatedBrush", palette.Selected);
         Set("DangerBrush", isDark ? "#FFF07178" : "#FFB42318");
         Set("SuccessBrush", isDark ? "#FF7FD99A" : "#FF0F7B3D");
+        Set("SpotlightSelectionBrush", "#FF007AFF");
+        Set("SpotlightSelectionTextBrush", "#FFFFFFFF");
+        Set("SwitchTrackBrush", isDark ? "#FF636368" : "#FFB8B8BE");
+        Set("SwitchThumbBrush", "#FFFFFFFF");
     }
 
     // ── 夜间 01 · 墨青 InkTeal ──────────────────────────────────────────
@@ -105,16 +110,16 @@ public static class ThemeService
     // Opaque enough to remain readable on WPF's layered window. These are
     // translucent surfaces, not a claim of live desktop backdrop blur.
     private static readonly Palette AppleLightPalette = new(
-        Window: "#F8F4F6FA", Panel: "#FFF9FAFC", Hover: "#FFE9EDF5",
-        Selected: "#FFDDE8F8", Text: "#FF1D2430", Muted: "#FF596477",
-        Faint: "#FF5D687B", Stroke: "#FFD7DEE9", Accent: "#FF2166C5",
-        AccentSoft: "#242166C5");
+        Window: "#F8F5F5F7", Panel: "#FFFFFFFF", Hover: "#FFF0F0F2",
+        Selected: "#FFE6E6EA", Text: "#FF1D1D1F", Muted: "#FF5E5E63",
+        Faint: "#FF68686D", Stroke: "#FFE2E2E6", Accent: "#FF007AFF",
+        AccentSoft: "#1F007AFF");
 
     private static readonly Palette AppleDarkPalette = new(
-        Window: "#F51C2029", Panel: "#FF292E3A", Hover: "#FF353B49",
-        Selected: "#FF31496A", Text: "#FFF6F8FC", Muted: "#FFB7C1D0",
-        Faint: "#FF92A0B3", Stroke: "#FF454C5A", Accent: "#FF91BAFF",
-        AccentSoft: "#328AB9FF");
+        Window: "#F5272729", Panel: "#FF323235", Hover: "#FF3D3D40",
+        Selected: "#FF49494D", Text: "#FFF5F5F7", Muted: "#FFC7C7CC",
+        Faint: "#FFABABB0", Stroke: "#FF505055", Accent: "#FF0A84FF",
+        AccentSoft: "#330A84FF");
 
     private static readonly IReadOnlyDictionary<string, Palette> Palettes =
         new Dictionary<string, Palette>(StringComparer.OrdinalIgnoreCase)
@@ -177,6 +182,11 @@ public static class ThemeService
             System.Windows.Application.Current.Resources["DangerBrush"] = System.Windows.SystemColors.WindowTextBrush;
             System.Windows.Application.Current.Resources["SuccessBrush"] = System.Windows.SystemColors.WindowTextBrush;
             System.Windows.Application.Current.Resources["HairlineBrush"] = System.Windows.SystemColors.WindowTextBrush;
+            System.Windows.Application.Current.Resources["SpotlightSelectionBrush"] = System.Windows.SystemColors.HighlightBrush;
+            System.Windows.Application.Current.Resources["SpotlightSelectionTextBrush"] = System.Windows.SystemColors.HighlightTextBrush;
+            System.Windows.Application.Current.Resources["SwitchTrackBrush"] = System.Windows.SystemColors.ControlBrush;
+            System.Windows.Application.Current.Resources["SwitchThumbBrush"] = System.Windows.SystemColors.WindowBrush;
+            PaletteChanged?.Invoke();
             return;
         }
 
@@ -184,6 +194,7 @@ public static class ThemeService
         var palette = Palettes.GetValueOrDefault(effective, InkTealPalette);
         ApplyPalette(palette, DarkIds.Contains(effective));
         Set("HairlineBrush", DarkIds.Contains(effective) ? "#66FFFFFF" : "#99FFFFFF");
+        PaletteChanged?.Invoke();
     }
 
     private static bool IsAuto(string theme) =>

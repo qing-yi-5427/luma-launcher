@@ -33,11 +33,13 @@ public sealed partial class MainWindow : Window
     private readonly SettingsStore _settings;
     private readonly bool _previewMode;
     private readonly HotkeyService _hotkey = new();
+    private readonly LauncherFocusRecovery _focusRecovery;
     private CancellationTokenSource? _searchCancellation;
     private CancellationTokenSource? _detailCancellation;
     private CancellationTokenSource? _idleMaintenanceCancellation;
     private HwndSource? _source;
     private HotkeyRegistration? _registration;
+    private bool _hotkeyActivationPending;
     private CancellationTokenSource? _previewCancellation;
     internal string? ActiveHotkey => _registration?.Active;
     private long _searchGeneration;
@@ -82,6 +84,18 @@ public sealed partial class MainWindow : Window
         _previewMode = previewMode;
         _settings = settings;
         _controller = new LauncherController(_search, settings);
+        _focusRecovery = new LauncherFocusRecovery(Dispatcher, () => IsVisible, () => IsActive,
+            () => _contextMenuOpen, () => (NativeMethods.GetAsyncKeyState(NativeMethods.VkMenu) & 0x8000) != 0,
+            NativeMethods.GetForegroundWindow, () =>
+            {
+                var activated = Activate();
+                if (activated)
+                {
+                    SearchBox.Focus();
+                    Keyboard.Focus(SearchBox);
+                }
+                return activated && IsActive;
+            }, HideLauncher);
         InitializeComponent();
         ResultsList.ItemsSource = _results;
         UpdateSortButton();
@@ -149,6 +163,7 @@ public sealed partial class MainWindow : Window
         if (_source is null || _previewMode)
             return;
         _registration = _hotkey.Register(_source.Handle, _settings.Current.Hotkey);
+        DiagnosticsService.Log("hotkey-register", $"requested={_registration.Requested}; active={_registration.Active}; fallback={_registration.UsedFallback}; error={_registration.ErrorCode}");
         HotkeyText.Text = _registration.Active.Replace("+", "  ").ToUpperInvariant();
         HotkeyRegistrationChanged?.Invoke(_registration);
     }
@@ -196,11 +211,14 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        var previousForeground = NativeMethods.GetForegroundWindow();
+        if (!_hotkeyActivationPending)
+            _focusRecovery.Stop();
         _quickSwitch.CaptureForegroundDialog();
         _idleMaintenanceCancellation?.Cancel();
         var wasVisible = IsVisible;
-        Show();
         _ignoreDeactivateUntil = DateTimeOffset.UtcNow.AddMilliseconds(900);
+        Show();
         WindowState = WindowState.Normal;
         UpdateLayout();
         if (_settings.Current.RememberWindowPosition &&
@@ -217,6 +235,8 @@ public sealed partial class MainWindow : Window
         SearchBox.Focus();
         Keyboard.Focus(SearchBox);
         SearchBox.SelectAll();
+        if (_hotkeyActivationPending && !_previewMode)
+            _focusRecovery.Start(previousForeground, new WindowInteropHelper(this).Handle, IsActive);
         QuickSwitchHint.Visibility = _quickSwitch.HasTarget ? Visibility.Visible : Visibility.Collapsed;
         AnimateShow(wasVisible);
         if (string.IsNullOrWhiteSpace(SearchBox.Text))
@@ -227,6 +247,7 @@ public sealed partial class MainWindow : Window
 
     public void HideLauncher()
     {
+        _focusRecovery.Stop();
         StopMotion(settle: true);
         BeginAnimation(OpacityProperty, null);
         Opacity = 1;
@@ -298,13 +319,16 @@ public sealed partial class MainWindow : Window
 
         if (_hotkey.IsHotkeyMessage(message, wParam))
         {
+            DiagnosticsService.Log("hotkey-message", $"visible={IsVisible}; active={IsActive}; suppressed={_controller.GameMode.Suppressed}");
             if (_controller.GameMode.Suppressed)
             {
                 // Swallow the hotkey while a fullscreen app is in front.
                 handled = true;
                 return IntPtr.Zero;
             }
-            ToggleLauncher();
+            _hotkeyActivationPending = true;
+            try { ToggleLauncher(); }
+            finally { _hotkeyActivationPending = false; }
             handled = true;
         }
         return IntPtr.Zero;
@@ -1549,6 +1573,7 @@ public sealed partial class MainWindow : Window
 
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
+        _focusRecovery.Stop();
         StopMotion();
         BeginAnimation(OpacityProperty, null);
         _previewCancellation?.Cancel();

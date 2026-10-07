@@ -10,6 +10,7 @@ internal static class NativeMethods
     internal const uint ModShift = 0x0004;
     internal const uint ModNoRepeat = 0x4000;
     internal const uint VkSpace = 0x20;
+    internal const int VkMenu = 0x12;
     internal const uint SwpNoSize = 0x0001;
     internal const uint SwpNoZOrder = 0x0004;
     internal const uint SwpNoActivate = 0x0010;
@@ -22,6 +23,12 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool UnregisterHotKey(IntPtr window, int id);
+
+    [DllImport("user32.dll")]
+    internal static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    internal static extern short GetAsyncKeyState(int virtualKey);
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

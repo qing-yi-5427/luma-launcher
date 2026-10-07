@@ -10,6 +10,7 @@ if (args.Contains("--preview")) { LumaLauncher.Tests.PreviewHarness.Run(); retur
 if (args.Contains("--dpi-scroll")) { LumaLauncher.Tests.DpiScrollBench.Run(); return; }
 LumaLauncher.Tests.HighlightTests.Run();
 LumaLauncher.Tests.MotionTests.VerifySpring();
+LumaLauncher.Tests.HotkeyReliabilityTests.Run();
 LumaLauncher.Tests.ReleaseRegressionTests.Run();
 await LumaLauncher.Tests.ReleaseRegressionTests.RunSearchAsync();
 await LumaLauncher.Tests.MimoRegressionTests.RunAsync();

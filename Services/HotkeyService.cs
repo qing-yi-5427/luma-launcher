@@ -8,9 +8,14 @@ public sealed class HotkeyService
     private const int ProbeId = 0x4C56;
     private IntPtr _window;
     private bool _registered;
+    private HotkeyRegistration? _current;
 
     public HotkeyRegistration Register(IntPtr window, string requested)
     {
+        // Applying unrelated settings must not create a gap in the active global hotkey.
+        if (_registered && window == _window && _current is { UsedFallback: false } current &&
+            current.Requested.Equals(requested, StringComparison.OrdinalIgnoreCase))
+            return current;
         Unregister();
         _window = window;
 
@@ -25,12 +30,13 @@ public sealed class HotkeyService
             if (NativeMethods.RegisterHotKey(window, HotkeyId, modifiers, gesture.VirtualKey))
             {
                 _registered = true;
-                return new HotkeyRegistration(requested, candidate, !candidate.Equals(requested, StringComparison.OrdinalIgnoreCase), lastError);
+                _current = new HotkeyRegistration(requested, candidate, !candidate.Equals(requested, StringComparison.OrdinalIgnoreCase), lastError);
+                return _current;
             }
             lastError = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
         }
 
-        return new HotkeyRegistration(requested, "未注册", true, lastError);
+        return _current = new HotkeyRegistration(requested, "未注册", true, lastError);
     }
 
     /// <summary>Probe whether a gesture can be registered without touching the live hotkey.</summary>
@@ -81,6 +87,7 @@ public sealed class HotkeyService
         if (_registered && _window != IntPtr.Zero)
             NativeMethods.UnregisterHotKey(_window, HotkeyId);
         _registered = false;
+        _current = null;
     }
 
     private static IEnumerable<string> BuildCandidates(string requested)

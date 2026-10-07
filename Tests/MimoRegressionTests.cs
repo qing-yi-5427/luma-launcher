@@ -57,6 +57,8 @@ internal static class MimoRegressionTests
                 using var window = new HwndSource(new HwndSourceParameters("Luma regression probe") { ParentWindow = new IntPtr(-3), WindowStyle = 0 });
                 var registration = hotkey.Register(window.Handle, "Ctrl+Alt+Shift+F24");
                 Check(registration.Active != "未注册", "Could not register test hotkey");
+                Check(ReferenceEquals(registration, hotkey.Register(window.Handle, "Ctrl+Alt+Shift+F24")),
+                    "Saving unrelated settings re-registered and briefly released the active hotkey");
                 Check(!HotkeyService.TryProbe(registration.Active, out _), "Expected real duplicate registration to fail");
                 Check(HotkeyService.TryProbeForSettings(registration.Active, registration.Active, out _), "Own active hotkey blocks settings");
                 Check(!HotkeyService.TryProbeForSettings(registration.Active, null, out _), "Unowned conflict ignored");

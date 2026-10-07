@@ -136,8 +136,6 @@
             <Grid Grid.Row="0" Margin="15,9,7,7">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition x:Name="AppActionColumn" Width="66"/>
-                    <ColumnDefinition x:Name="FileActionColumn" Width="66"/>
                     <ColumnDefinition Width="66"/>
                 </Grid.ColumnDefinitions>
                 <Grid x:Name="SearchCapsuleHost" Grid.Column="0" Margin="0,0,8,0">
@@ -168,11 +166,7 @@
                     </Grid>
                     </Border>
                 </Grid>
-                <Button x:Name="AppFilterButton" Grid.Column="1" Content="&#xE80F;" Tag="Application"
-                        Style="{StaticResource HeaderActionButton}" ToolTip="只看应用；再次点击显示全部" Click="Filter_Click"/>
-                <Button x:Name="FileFilterButton" Grid.Column="2" Content="&#xE8A5;" Tag="File"
-                        Style="{StaticResource HeaderActionButton}" ToolTip="只看文件；再次点击显示全部" Click="Filter_Click"/>
-                <Button x:Name="HeaderMoreButton" Grid.Column="3" Content="&#xE10C;"
+                <Button x:Name="HeaderMoreButton" Grid.Column="1" Content="&#xE10C;"
                         Style="{StaticResource HeaderActionButton}" ToolTip="更多操作" Click="HeaderMore_Click"/>
             </Grid>
 

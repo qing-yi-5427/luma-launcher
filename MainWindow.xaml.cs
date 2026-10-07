@@ -64,12 +64,9 @@ public sealed partial class MainWindow : Window
     private readonly System.Diagnostics.Stopwatch _queryTimer = new();
     private System.Windows.Threading.DispatcherTimer? _progressTimer;
     private DateTimeOffset _toastUntil;
-    private readonly CriticalSpring _widthSpring = new(0.34);
-    private readonly CriticalSpring _heightSpring = new(0.34);
     private readonly CriticalSpring _showSpring = new(0.28);
     private long _lastMotionTick;
     private bool _motionSubscribed;
-    private bool _sizeMotionActive;
     private bool _showMotionActive;
 
     /// <summary>Bound from the result item template; density-aware row height.</summary>
@@ -139,12 +136,7 @@ public sealed partial class MainWindow : Window
 
     private void LauncherRoot_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (AppActionColumn is null || FileActionColumn is null) return;
         var narrow = e.NewSize.Width < 500;
-        AppActionColumn.Width = new GridLength(narrow ? 0 : 66);
-        FileActionColumn.Width = new GridLength(narrow ? 0 : 66);
-        AppFilterButton.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
-        FileFilterButton.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
         HotkeyText.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
     }
 
@@ -330,8 +322,6 @@ public sealed partial class MainWindow : Window
         _source.AddHook(WindowProcedure);
         _glass = new WindowsGlassService(this, LauncherRoot,
             new GlassRegionPart(SearchCapsuleHost, 32),
-            new GlassRegionPart(AppFilterButton, 30),
-            new GlassRegionPart(FileFilterButton, 30),
             new GlassRegionPart(HeaderMoreButton, 30),
             new GlassRegionPart(ResultsSurface, 20),
             new GlassRegionPart(HelpOverlay, 20));
@@ -486,7 +476,6 @@ public sealed partial class MainWindow : Window
         if (_searchPending == pending) return;
         _searchPending = pending;
         ResultsHost.IsHitTestVisible = !pending;
-        ResultsHost.Opacity = pending ? 0.55 : 1;
         if (pending)
         {
             if (_allResults.Count > 0)
@@ -558,7 +547,6 @@ public sealed partial class MainWindow : Window
             : $"{filtered.Count} 个结果{(_fileMatchCount is > 0 ? $" · 文件 ≥ {_fileMatchCount}" : "")}{(_hasMore ? " · 可继续加载" : "")} · {_batchStatus}";
         UpdateFilterButtons();
         SetExpanded(_results.Count, _allResults.Count > 0 || SearchBox.Text.Length > 0);
-        FadeResultsIn();
     }
 
     private void ShowEmptyState(bool show, string title, string hint)
@@ -598,13 +586,6 @@ public sealed partial class MainWindow : Window
         _progressTimer.Start();
     }
 
-    private void FadeResultsIn()
-    {
-        if (!SystemParameters.ClientAreaAnimation || ResultsList is null)
-            return;
-        ResultsList.BeginAnimation(OpacityProperty, new DoubleAnimation(0.55, 1, TimeSpan.FromMilliseconds(90)));
-    }
-
     private void ShowToast(string message)
     {
         StatusText.Text = message;
@@ -621,7 +602,7 @@ public sealed partial class MainWindow : Window
 
     private void UpdateFilterButtons()
     {
-        foreach (var button in new[] { AllFilterButton, AppFilterButton, FileFilterButton, FolderFilterButton })
+        foreach (var button in new[] { AllFilterButton, FolderFilterButton })
         {
             var selected = string.Equals(button.Tag as string, _activeFilter, StringComparison.Ordinal);
             button.SetResourceReference(BackgroundProperty, selected ? "AccentBrush" : "LauncherMaterialBrush");
@@ -698,29 +679,16 @@ public sealed partial class MainWindow : Window
 
     private void AnimateWindowSize(double targetWidth, double targetHeight)
     {
-        if (_sizeMotionActive && Math.Abs(_widthSpring.Target - targetWidth) < 0.35 &&
-            Math.Abs(_heightSpring.Target - targetHeight) < 0.35)
-            return;
-        if (!_sizeMotionActive && Math.Abs(Width - targetWidth) < 0.35 &&
+        if (Math.Abs(Width - targetWidth) < 0.35 &&
             Math.Abs(Height - targetHeight) < 0.35)
             return;
-        if (!SystemParameters.ClientAreaAnimation || !IsVisible)
-        {
-            StopMotion(settle: true);
-            Width = targetWidth;
-            Height = targetHeight;
-            PositionOnCursorMonitor();
-            return;
-        }
-        if (!_sizeMotionActive)
-        {
-            _widthSpring.Reset(Width);
-            _heightSpring.Reset(Height);
-        }
-        _widthSpring.Retarget(targetWidth);
-        _heightSpring.Retarget(targetHeight);
-        _sizeMotionActive = true;
-        StartMotion();
+        // Resizing a layered WPF HWND inside CompositionTarget.Rendering enters
+        // HwndTarget.OnResize synchronously and can starve queued input for
+        // hundreds of milliseconds. Change the native window size only once;
+        // the small show animation remains a visual transform.
+        Width = targetWidth;
+        Height = targetHeight;
+        PositionOnCursorMonitor();
     }
 
     private (double Width, double Height) GetFullResultsSize()
@@ -780,22 +748,13 @@ public sealed partial class MainWindow : Window
         var now = System.Diagnostics.Stopwatch.GetTimestamp();
         var dt = (now - _lastMotionTick) / (double)System.Diagnostics.Stopwatch.Frequency;
         _lastMotionTick = now;
-        if (_sizeMotionActive)
-        {
-            var widthMoving = _widthSpring.Step(dt);
-            var heightMoving = _heightSpring.Step(dt);
-            Width = _widthSpring.Value;
-            Height = _heightSpring.Value;
-            _sizeMotionActive = widthMoving || heightMoving;
-            if (!_sizeMotionActive) PositionOnCursorMonitor();
-        }
         if (_showMotionActive)
         {
             _showMotionActive = _showSpring.Step(dt);
             WindowTranslate.Y = _showSpring.Value;
             _glass?.RefreshRegion();
         }
-        if (!_sizeMotionActive && !_showMotionActive) StopMotion();
+        if (!_showMotionActive) StopMotion();
     }
 
     private void StopMotion(bool settle = false)
@@ -804,18 +763,12 @@ public sealed partial class MainWindow : Window
         _motionSubscribed = false;
         if (settle)
         {
-            if (_sizeMotionActive)
-            {
-                Width = _widthSpring.Target;
-                Height = _heightSpring.Target;
-            }
             if (_showMotionActive)
             {
                 WindowTranslate.Y = 0;
                 _glass?.RefreshRegion();
             }
         }
-        _sizeMotionActive = false;
         _showMotionActive = false;
     }
 

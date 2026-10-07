@@ -11,6 +11,11 @@ if (args.Contains("--test-error-exit")) throw new InvalidOperationException("Del
 if (args.Contains("--render")) { LumaLauncher.Tests.PreviewHarness.Render(); return; }
 if (args.Contains("--preview-hotkey-check")) { LumaLauncher.Tests.PreviewHarness.VerifyHotkeyLifecycle(); return; }
 if (args.Contains("--input-latency")) { LumaLauncher.Tests.InputLatencyTests.Run(); return; }
+if (args.Contains("--render-latency"))
+{
+    LumaLauncher.Tests.RealRenderLatencyTests.Run(args.Contains("--minimal-probes"));
+    return;
+}
 if (args.Contains("--preview")) { LumaLauncher.Tests.PreviewHarness.Run(args.Contains("--test-preview-failure")); return; }
 if (args.Contains("--dpi-scroll")) { LumaLauncher.Tests.DpiScrollBench.Run(); return; }
 if (args.Contains("--glass-native")) { LumaLauncher.Tests.GlassNativeTests.Run(); return; }

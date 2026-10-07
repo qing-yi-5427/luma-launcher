@@ -28,18 +28,24 @@ internal static class MotionTests
         try
         {
         var animate = typeof(MainWindow).GetMethod("AnimateWindowSize", Private)!;
+        var animateShow = typeof(MainWindow).GetMethod("AnimateShow", Private)!;
         var openHelp = typeof(MainWindow).GetMethod("OpenHelp", Private)!;
         var subscription = typeof(MainWindow).GetField("_motionSubscribed", Private)!;
-        var widthSpring = (CriticalSpring)typeof(MainWindow).GetField("_widthSpring", Private)!.GetValue(window)!;
 
         animate.Invoke(window, [700d, 600d]);
-        if (!System.Windows.SystemParameters.ClientAreaAnimation) return;
-        Check((bool)subscription.GetValue(window)!, "Window size motion was not subscribed");
+        Check(Math.Abs(window.Width - 700) < 0.35 && Math.Abs(window.Height - 600) < 0.35,
+            "Native window size did not reach its target immediately");
+        Check(!(bool)subscription.GetValue(window)!, "Window size subscribed to per-frame rendering");
         animate.Invoke(window, [1040d, 680d]);
-        Check(widthSpring.Target == 1040, "Window size retarget was lost");
+        Check(Math.Abs(window.Width - 1040) < 0.35 && Math.Abs(window.Height - 680) < 0.35,
+            "Native window resize did not reach its second target immediately");
+        Check(!(bool)subscription.GetValue(window)!, "Window resize left rendering subscribed");
+        animateShow.Invoke(window, [false]);
+        if (System.Windows.SystemParameters.ClientAreaAnimation)
+            Check((bool)subscription.GetValue(window)!, "Show visual motion was not subscribed");
         openHelp.Invoke(window, null);
-        Check(!(bool)subscription.GetValue(window)!, "Help left stale motion active");
-        animate.Invoke(window, [700d, 500d]);
+        Check(!(bool)subscription.GetValue(window)!, "Help left show rendering subscribed");
+        animateShow.Invoke(window, [false]);
         window.HideLauncher();
         Check(!(bool)subscription.GetValue(window)!, "Hide left rendering subscription active");
         }

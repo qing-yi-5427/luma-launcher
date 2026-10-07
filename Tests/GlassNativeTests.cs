@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -47,12 +48,16 @@ internal static class GlassNativeTests
         try
         {
         board.Show();
-        Pump(TimeSpan.FromMilliseconds(200));
+        board.UpdateLayout();
         var gapBlack = new Point(280, 2);
         var gapWhite = new Point(330, 2);
         var interior = new Point(250, 45);
         var interiorWhitePoint = new Point(220, 45);
         var interiorBlackPoint = new Point(270, 45);
+        // A composited desktop sample is meaningful only after our own board
+        // is actually frontmost at both reference pixels. Other topmost UI can
+        // otherwise be mistaken for a glass regression.
+        PrepareBoard(board, gapBlack, gapWhite);
         uint beforeBlack = SampleRelative(board, gapBlack);
         uint beforeWhite = SampleRelative(board, gapWhite);
         uint beforeInterior = SampleRelative(board, interior);
@@ -237,8 +242,67 @@ internal static class GlassNativeTests
             grid.Children.Add(tile);
         }
         return new Window { WindowStyle = WindowStyle.None, AllowsTransparency = false,
-            ShowActivated = false, ShowInTaskbar = false, Topmost = true, Background = Brushes.Black,
+            ShowActivated = true, ShowInTaskbar = false, Topmost = true, Background = Brushes.Black,
             Left = left, Top = top, Width = 800, Height = 500, Content = grid };
+    }
+
+    private static void PrepareBoard(Window board, Point blackPoint, Point whitePoint)
+    {
+        var handle = new WindowInteropHelper(board).Handle;
+        Require(handle != IntPtr.Zero, "Checkerboard has no native window.");
+        board.Activate();
+        Require(SetWindowPos(handle, new IntPtr(-1), 0, 0, 0, 0, 0x0003),
+            "Could not move the test checkerboard to the topmost z-order.");
+        uint black = 0, white = 0;
+        IntPtr blackHit = IntPtr.Zero, whiteHit = IntPtr.Zero;
+        for (int attempt = 0; attempt < 12; attempt++)
+        {
+            board.UpdateLayout();
+            Pump(TimeSpan.FromMilliseconds(50));
+            blackHit = HitRelative(board, blackPoint);
+            whiteHit = HitRelative(board, whitePoint);
+            black = SampleRelative(board, blackPoint);
+            white = SampleRelative(board, whitePoint);
+            if (blackHit == handle && whiteHit == handle &&
+                black < 0x101010 && white > 0xeeeeee)
+                return;
+        }
+        throw new InvalidOperationException(
+            $"Checkerboard precondition failed before glass probe: " +
+            $"black=0x{black:X6}, white=0x{white:X6}, " +
+            $"black_point={ScreenRelative(board, blackPoint)}, white_point={ScreenRelative(board, whitePoint)}, " +
+            $"black_hit={DescribeWindow(blackHit)}, white_hit={DescribeWindow(whiteHit)}, " +
+            $"board={DescribeWindow(handle)}, wpf_visible={board.IsVisible}, wpf_active={board.IsActive}, " +
+            $"desktops={DescribeDesktops()}.");
+    }
+
+    private static string DescribeWindow(IntPtr handle)
+    {
+        var className = new StringBuilder(256);
+        _ = GetClassName(handle, className, className.Capacity);
+        _ = GetWindowThreadProcessId(handle, out uint pid);
+        string rectangle = GlassNative.GetWindowRect(handle, out var rect)
+            ? $"[{rect.Left},{rect.Top},{rect.Right},{rect.Bottom}]" : "<no-rect>";
+        return $"0x{handle.ToInt64():X}({className},pid={pid},visible={GlassNative.IsWindowVisible(handle)},rect={rectangle})";
+    }
+
+    private static string DescribeDesktops()
+    {
+        IntPtr input = OpenInputDesktop(0, false, 0x0001);
+        try
+        {
+            var thread = GetThreadDesktop(GetCurrentThreadId());
+            return $"thread={DesktopName(thread)},input={DesktopName(input)}";
+        }
+        finally { if (input != IntPtr.Zero) CloseDesktop(input); }
+    }
+
+    private static string DesktopName(IntPtr desktop)
+    {
+        if (desktop == IntPtr.Zero) return "<unavailable>";
+        var buffer = new StringBuilder(256);
+        return GetUserObjectInformation(desktop, 2, buffer, buffer.Capacity * sizeof(char), out _)
+            ? buffer.ToString() : "<unavailable>";
     }
 
     private static Point ScreenRelative(Window board, Point foregroundPoint) =>
@@ -322,6 +386,19 @@ internal static class GlassNativeTests
     [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr window, out GlassNative.Rect rectangle);
     [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr window, ref NativePoint point);
     [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(NativePoint point);
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool SetWindowPos(
+        IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(
+        IntPtr window, StringBuilder className, int maxCount);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+    [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr OpenInputDesktop(
+        uint flags, bool inherit, uint desiredAccess);
+    [DllImport("user32.dll")] private static extern IntPtr GetThreadDesktop(uint threadId);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll", EntryPoint = "GetUserObjectInformationW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool GetUserObjectInformation(IntPtr handle, int index, StringBuilder buffer,
+        int length, out int needed);
+    [DllImport("user32.dll")] private static extern bool CloseDesktop(IntPtr desktop);
     [DllImport("gdi32.dll")] private static extern uint GetPixel(IntPtr dc, int x, int y);
     [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleDC(IntPtr dc);
     [DllImport("gdi32.dll")] private static extern bool DeleteDC(IntPtr dc);

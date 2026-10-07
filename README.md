@@ -8,7 +8,8 @@ or run a privileged indexing service.
 ## Features
 
 - Unified application, file and folder search with fuzzy and Pinyin-initial matching
-- 250 ms cancellable input debounce, with Enter available to search immediately
+- Immediate application/tool results with a 100 ms cancellable file-search debounce;
+  Enter can search immediately
 - Fast 64-result preview, a 512-result expanded view, and repeatable Load more
   (512 additional results per request; the selected sort and type filter are retained)
 - Provider-side application/file/folder filters; loaded counts and file-match lower
@@ -60,14 +61,21 @@ beside `Luma.exe` at build time. See `THIRD_PARTY_NOTICES.md` for its license.
 
 The release executable is written to `bin/Release/net10.0-windows10.0.19041.0/Luma.exe`.
 
-## Design preview
+## Design and interactive preview
 
-On this branch, double-click `Start-ApplePreview.cmd` for an isolated interactive
-preview. It uses temporary settings, does not register the global hotkey, and
-exits when hidden with Esc or closed with Alt+F4. Windows 11 build 22621 or newer
-can supply native Desktop Acrylic when system transparency is enabled; older or
-high-contrast environments use solid surfaces. See `APPLE_DESIGN_PREVIEW.md` for
-render commands and the remaining desktop visual check.
+The launcher uses a Spotlight-style search capsule and a separate results panel.
+On Windows 11 build 22621 or newer, an independent, non-activating Windows
+Composition window samples the desktop behind the rounded glass surfaces when
+system transparency is enabled. Windows 10, high contrast, and disabled
+transparency use solid surfaces.
+
+For an isolated interactive preview, double-click `Start-ApplePreview.cmd`. It
+uses temporary settings and registers a real global hotkey, normally `Alt+Space`
+or an available fallback if that combination is taken. Esc hides the preview
+while it keeps running; use the active hotkey or its tray icon to show it again.
+Use the preview tray menu's Exit command or `Ctrl+Shift+Q` to quit. The preview
+does not change the installed launcher's settings. See `APPLE_DESIGN_PREVIEW.md`
+for render commands and preview details.
 
 ## Single-file package
 
@@ -196,9 +204,10 @@ publishes, checks that the artifact contains one EXE, and prints its SHA-256.
 `--render` writes light/dark offscreen PNGs (including 200% pixel-density samples)
 under the test executable's `renders` directory without showing/activating a window.
 These are layout samples, not verification of actual per-monitor DPI transitions.
-`--preview` opens an isolated interactive harness (no global hotkey registration,
-no auto-start/exit of Everything, no user configuration writes); it activates a
-window, so do not use it while another foreground workflow must remain undisturbed.
+`--preview` opens an isolated interactive harness with its own global hotkey and
+tray icon (no auto-start/exit of Everything and no user configuration writes).
+It activates a window, so do not use it while another foreground workflow must
+remain undisturbed. Its automated hotkey check does not send physical keystrokes.
 
 Manual Windows acceptance should cover IME composition, caret/clipboard behavior,
 nonempty-query hide/wake, repeated Load more and each type filter, keyboard focus,

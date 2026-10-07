@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0 — 2026-10-07
+
+### Changed
+- Reworked the launcher as a Spotlight-style search capsule with a separate results panel, one More button, Apple light/dark palettes, and a grouped settings layout. Application and file filters remain in the results menu.
+- On Windows 11 build 22621+ with transparency enabled, use a separate non-activating Windows Composition backdrop window for rounded, desktop-sampling glass. Windows 10, high contrast, and disabled transparency use solid surfaces.
+- Update the native window size once when result height changes. This removes the per-frame layered-window resize that delayed input during live searches; the small show animation remains on the visual content.
+
+### Fixed
+- Keep the search text responsive while providers publish results, without repeatedly fading the result list during typing.
+- Keep the interactive preview hotkey registered while Esc hides the window; the tray icon or active hotkey can show it again, and Exit releases the registration.
+- Harden shutdown and tray cleanup so repeated exit paths do not dispose launcher resources twice.
+
+### Validation
+- Release smoke tests and real-window input-queue probes passed. The preview hotkey lifecycle test checks registration and release without sending physical keystrokes; actual key delivery still needs a user check.
+
 ## 0.5.1 — 2026-09-11
 
 ### Fixed

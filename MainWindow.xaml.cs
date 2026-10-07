@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media.Animation;
+using System.Windows.Media;
 using LumaLauncher.Models;
 using LumaLauncher.Services;
 
@@ -58,6 +59,13 @@ public sealed partial class MainWindow : Window
     private readonly System.Diagnostics.Stopwatch _queryTimer = new();
     private System.Windows.Threading.DispatcherTimer? _progressTimer;
     private DateTimeOffset _toastUntil;
+    private readonly CriticalSpring _widthSpring = new(0.34);
+    private readonly CriticalSpring _heightSpring = new(0.34);
+    private readonly CriticalSpring _showSpring = new(0.28);
+    private long _lastMotionTick;
+    private bool _motionSubscribed;
+    private bool _sizeMotionActive;
+    private bool _showMotionActive;
 
     /// <summary>Bound from the result item template; density-aware row height.</summary>
     public double ResultRowHeight => _settings.Current.Density == "Compact" ? 46 : 54;
@@ -77,6 +85,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         ResultsList.ItemsSource = _results;
         UpdateSortButton();
+        UpdateFilterButtons();
         SearchHint.Text = UiStrings.Get("SearchHint");
         TextCompositionManager.AddPreviewTextInputStartHandler(SearchBox, (_, _) =>
         {
@@ -189,6 +198,7 @@ public sealed partial class MainWindow : Window
 
         _quickSwitch.CaptureForegroundDialog();
         _idleMaintenanceCancellation?.Cancel();
+        var wasVisible = IsVisible;
         Show();
         _ignoreDeactivateUntil = DateTimeOffset.UtcNow.AddMilliseconds(900);
         WindowState = WindowState.Normal;
@@ -208,7 +218,7 @@ public sealed partial class MainWindow : Window
         Keyboard.Focus(SearchBox);
         SearchBox.SelectAll();
         QuickSwitchHint.Visibility = _quickSwitch.HasTarget ? Visibility.Visible : Visibility.Collapsed;
-        AnimateShow();
+        AnimateShow(wasVisible);
         if (string.IsNullOrWhiteSpace(SearchBox.Text))
             _ = SearchCurrentTextAsync(0);
         else if (_completedQuery != SearchBox.Text.Trim())
@@ -217,6 +227,9 @@ public sealed partial class MainWindow : Window
 
     public void HideLauncher()
     {
+        StopMotion(settle: true);
+        BeginAnimation(OpacityProperty, null);
+        Opacity = 1;
         _previewCancellation?.Cancel();
         _detailCancellation?.Cancel();
         _composing = false;
@@ -524,7 +537,7 @@ public sealed partial class MainWindow : Window
         foreach (var button in new[] { AllFilterButton, AppFilterButton, FileFilterButton, FolderFilterButton })
         {
             var selected = string.Equals(button.Tag as string, _activeFilter, StringComparison.Ordinal);
-            button.SetResourceReference(BackgroundProperty, selected ? "AccentSoftBrush" : "SurfaceSubtleBrush");
+            button.SetResourceReference(BackgroundProperty, selected ? "SurfaceElevatedBrush" : "SurfaceSubtleBrush");
             button.SetResourceReference(ForegroundProperty, selected ? "AccentBrush" : "MutedTextBrush");
             button.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
         }
@@ -592,34 +605,23 @@ public sealed partial class MainWindow : Window
 
     private void AnimateWindowSize(double targetWidth, double targetHeight)
     {
-        if (!SystemParameters.ClientAreaAnimation)
+        if (!SystemParameters.ClientAreaAnimation || !IsVisible)
         {
-            BeginAnimation(WidthProperty, null);
-            BeginAnimation(HeightProperty, null);
+            StopMotion(settle: true);
             Width = targetWidth;
             Height = targetHeight;
             PositionOnCursorMonitor();
             return;
         }
-
-        var duration = TimeSpan.FromMilliseconds(_fullResultsMode ? 175 : 135);
-        if (Math.Abs(ActualWidth - targetWidth) > 0.5)
+        if (!_sizeMotionActive)
         {
-            var startWidth = ActualWidth;
-            Width = targetWidth;
-            var widthAnimation = new DoubleAnimation(startWidth, targetWidth, duration)
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            widthAnimation.Completed += (_, _) => PositionOnCursorMonitor();
-            BeginAnimation(WidthProperty, widthAnimation, HandoffBehavior.SnapshotAndReplace);
+            _widthSpring.Reset(Width);
+            _heightSpring.Reset(Height);
         }
-
-        var heightAnimation = new DoubleAnimation(targetHeight, duration)
-        {
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        };
-        BeginAnimation(HeightProperty, heightAnimation, HandoffBehavior.SnapshotAndReplace);
+        _widthSpring.Retarget(targetWidth);
+        _heightSpring.Retarget(targetHeight);
+        _sizeMotionActive = true;
+        StartMotion();
     }
 
     private (double Width, double Height) GetFullResultsSize()
@@ -636,19 +638,78 @@ public sealed partial class MainWindow : Window
             Math.Max(260, Math.Min(FullResultsHeight, availableHeight)));
     }
 
-    private void AnimateShow()
+    private void AnimateShow(bool wasVisible)
     {
         if (!SystemParameters.ClientAreaAnimation)
         {
+            BeginAnimation(OpacityProperty, null);
             Opacity = 1;
             WindowTranslate.Y = 0;
             return;
         }
-        Opacity = 0.94;
-        WindowTranslate.Y = -5;
-        BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(115)));
-        WindowTranslate.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty,
-            new DoubleAnimation(0, TimeSpan.FromMilliseconds(150)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+        if (!wasVisible)
+        {
+            BeginAnimation(OpacityProperty, null);
+            Opacity = 0.9;
+            _showSpring.Reset(-7);
+            WindowTranslate.Y = -7;
+        }
+        _showSpring.Retarget(0);
+        _showMotionActive = true;
+        StartMotion();
+        BeginAnimation(OpacityProperty, new DoubleAnimation(Opacity, 1, TimeSpan.FromMilliseconds(110)));
+    }
+
+    private void StartMotion()
+    {
+        if (_motionSubscribed) return;
+        _lastMotionTick = System.Diagnostics.Stopwatch.GetTimestamp();
+        CompositionTarget.Rendering += MotionFrame;
+        _motionSubscribed = true;
+    }
+
+    private void MotionFrame(object? sender, EventArgs e)
+    {
+        if (!IsVisible || !SystemParameters.ClientAreaAnimation)
+        {
+            StopMotion(settle: true);
+            return;
+        }
+        var now = System.Diagnostics.Stopwatch.GetTimestamp();
+        var dt = (now - _lastMotionTick) / (double)System.Diagnostics.Stopwatch.Frequency;
+        _lastMotionTick = now;
+        if (_sizeMotionActive)
+        {
+            var widthMoving = _widthSpring.Step(dt);
+            var heightMoving = _heightSpring.Step(dt);
+            Width = _widthSpring.Value;
+            Height = _heightSpring.Value;
+            _sizeMotionActive = widthMoving || heightMoving;
+            if (!_sizeMotionActive) PositionOnCursorMonitor();
+        }
+        if (_showMotionActive)
+        {
+            _showMotionActive = _showSpring.Step(dt);
+            WindowTranslate.Y = _showSpring.Value;
+        }
+        if (!_sizeMotionActive && !_showMotionActive) StopMotion();
+    }
+
+    private void StopMotion(bool settle = false)
+    {
+        if (_motionSubscribed) CompositionTarget.Rendering -= MotionFrame;
+        _motionSubscribed = false;
+        if (settle)
+        {
+            if (_sizeMotionActive)
+            {
+                Width = _widthSpring.Target;
+                Height = _heightSpring.Target;
+            }
+            if (_showMotionActive) WindowTranslate.Y = 0;
+        }
+        _sizeMotionActive = false;
+        _showMotionActive = false;
     }
 
     private void Filter_Click(object sender, RoutedEventArgs e)
@@ -711,8 +772,7 @@ public sealed partial class MainWindow : Window
         ApplyCurrentPage();
         if (!animate)
         {
-            BeginAnimation(WidthProperty, null);
-            BeginAnimation(HeightProperty, null);
+            StopMotion(settle: true);
             Width = Math.Min(CompactWidth, GetFullResultsSize().Width);
             var showBody = _allResults.Count > 0 || SearchBox.Text.Length > 0;
             Height = showBody
@@ -1369,8 +1429,7 @@ public sealed partial class MainWindow : Window
         HelpTitleText.Text = UiStrings.Get("HelpTitle");
         HelpOverlay.Visibility = Visibility.Visible;
         _helpOpen = true;
-        BeginAnimation(WidthProperty, null);
-        BeginAnimation(HeightProperty, null);
+        StopMotion(settle: true);
         var available = GetFullResultsSize();
         Width = Math.Min(720, available.Width);
         Height = Math.Min(420, available.Height);
@@ -1490,6 +1549,8 @@ public sealed partial class MainWindow : Window
 
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
+        StopMotion();
+        BeginAnimation(OpacityProperty, null);
         _previewCancellation?.Cancel();
         _previewCancellation?.Dispose();
         _controller.GameMode.Dispose();

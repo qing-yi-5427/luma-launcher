@@ -18,12 +18,14 @@ internal static class PreviewHarness
                 app.InitializeComponent();
                 var output = System.IO.Path.Combine(AppContext.BaseDirectory, "renders");
                 System.IO.Directory.CreateDirectory(output);
-                foreach (var theme in new[] { "Dark", "Light" })
+                foreach (var theme in new[] { ThemeService.AppleLight, ThemeService.AppleDark })
                 {
                     ThemeService.Apply(theme);
                     var settings = new SettingsWindow(new AppSettings { Theme = theme, EverythingLifecycle = "Connect" });
-                    Save((System.Windows.FrameworkElement)settings.Content, 540, 760, 1, $"settings-{theme}.png");
+                    Save((System.Windows.FrameworkElement)settings.Content, 660, 740, 1, $"settings-{theme}.png");
                     Save((System.Windows.FrameworkElement)settings.Content, 400, 360, 2, $"settings-{theme}-200pct.png");
+                    ((System.Windows.Controls.ListBox)settings.FindName("SettingsNav")).SelectedIndex = 1;
+                    Save((System.Windows.FrameworkElement)settings.Content, 660, 740, 1, $"settings-appearance-{theme}.png");
                     var main = new MainWindow(new SettingsStore(), true);
                     main.ChangeSort(ResultRanker.SizeDescending);
                     ThemeService.Apply(theme);
@@ -43,17 +45,28 @@ internal static class PreviewHarness
                         typeof(System.Windows.Controls.TextChangedEventHandler), main,
                         typeof(MainWindow).GetMethod("SearchBox_TextChanged", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!);
                     searchBox.TextChanged -= handler;
-                    searchBox.Text = "ddd";
+                    searchBox.Text = "design";
                     ((System.Windows.FrameworkElement)main.FindName("SearchHint")).Visibility = System.Windows.Visibility.Collapsed;
-                    list.ItemsSource = Enumerable.Range(1, 40).Select(i => new LauncherResult
+                    var sample = new (string Title, string Subtitle, LauncherResultKind Kind)[]
                     {
-                        Title = i == 1 ? "03baddd-DDD.txt" : i == 2 ? "ddd-notes-ddd.md" : i == 3 ? "d-d-d (no false highlight).txt" : $"report-{i:D3}.pdf",
-                        Subtitle = @"C:\Documents\ddd\Archive-DDD", Target = @"C:\Documents\ddd\Archive-DDD\03baddd-DDD.txt",
-                        Kind = LauncherResultKind.File, Score = 1
+                        ("Luma Design", "应用 · 快速打开", LauncherResultKind.Application),
+                        ("Design system notes", @"文档 · C:\Work\Projects\Luma", LauncherResultKind.File),
+                        ("Design assets", @"文件夹 · C:\Work\Projects\Luma", LauncherResultKind.Folder),
+                        ("Apple Human Interface Guidelines", "网页书签 · developer.apple.com", LauncherResultKind.Bookmark),
+                        ("Design review", "窗口 · Microsoft Edge", LauncherResultKind.Window),
+                        ("Color palette.fig", @"文件 · C:\Work\Projects\Luma", LauncherResultKind.File),
+                        ("Open Settings", "系统命令 · 偏好设置", LauncherResultKind.System),
+                        ("Design handoff.pdf", @"文件 · C:\Work\Projects\Luma", LauncherResultKind.File)
+                    };
+                    list.ItemsSource = sample.Select((entry, i) => new LauncherResult
+                    {
+                        Title = entry.Title, Subtitle = entry.Subtitle,
+                        Target = i == 0 ? @"C:\Program Files\Luma\Luma.exe" : @"C:\Work\Projects\Luma\" + entry.Title,
+                        Kind = entry.Kind, Score = 100 - i, IsFavorite = i == 0
                     }).ToArray();
                     list.SelectedIndex = 0; // quick mode: no asynchronous metadata reads
                     SearchHighlight.SetText((System.Windows.Controls.TextBlock)main.FindName("DetailLocationText"), ((LauncherResult)list.SelectedItem).Target);
-                    ((System.Windows.Controls.TextBlock)main.FindName("StatusText")).Text = "已加载 512 项 · 文件匹配 ≥ 1600 · 可继续加载";
+                    ((System.Windows.Controls.TextBlock)main.FindName("StatusText")).Text = "8 个结果 · 按 Enter 打开";
                     ((System.Windows.FrameworkElement)main.FindName("MoreButton")).Visibility = System.Windows.Visibility.Visible;
                     ((System.Windows.FrameworkElement)main.FindName("LoadMoreButton")).Visibility = System.Windows.Visibility.Visible;
                     Save((System.Windows.FrameworkElement)main.Content, 700, 600, 1, $"main-quick-{theme}.png");
@@ -62,7 +75,16 @@ internal static class PreviewHarness
                     ((System.Windows.FrameworkElement)main.FindName("DetailsDivider")).Visibility = System.Windows.Visibility.Visible;
                     ((System.Windows.FrameworkElement)main.FindName("DetailsPane")).Visibility = System.Windows.Visibility.Visible;
                     Save((System.Windows.FrameworkElement)main.Content, 1040, 680, 1, $"main-{theme}.png");
+                    ((System.Windows.Controls.ColumnDefinition)main.FindName("DetailsDividerColumn")).Width = new System.Windows.GridLength(0);
+                    ((System.Windows.Controls.ColumnDefinition)main.FindName("DetailsPaneColumn")).Width = new System.Windows.GridLength(0);
+                    ((System.Windows.FrameworkElement)main.FindName("DetailsDivider")).Visibility = System.Windows.Visibility.Collapsed;
+                    ((System.Windows.FrameworkElement)main.FindName("DetailsPane")).Visibility = System.Windows.Visibility.Collapsed;
                     Save((System.Windows.FrameworkElement)main.Content, 540, 360, 2, $"main-{theme}-200pct.png");
+                    if (theme == ThemeService.AppleLight)
+                        MotionTests.VerifyWindow(main);
+                    else
+                        main.CloseForExit();
+                    settings.Close();
                 }
                 Console.WriteLine($"PASS nonactivating renders: {output}");
                 void Save(System.Windows.FrameworkElement root, double width, double height, double scale, string name)
@@ -105,6 +127,11 @@ internal static class PreviewHarness
                 settings.Show();
             };
             main.Closed += (_, _) => Dispatcher.CurrentDispatcher.BeginInvokeShutdown(DispatcherPriority.Background);
+            main.IsVisibleChanged += (_, _) =>
+            {
+                if (!main.IsVisible)
+                    Dispatcher.CurrentDispatcher.BeginInvoke(() => main.CloseForExit(), DispatcherPriority.Background);
+            };
             main.InitializeLauncher();
             Console.WriteLine("preview: launcher initialized");
             main.ShowLauncher();

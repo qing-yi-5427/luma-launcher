@@ -9,6 +9,7 @@ if (args.Contains("--render")) { LumaLauncher.Tests.PreviewHarness.Render(); ret
 if (args.Contains("--preview")) { LumaLauncher.Tests.PreviewHarness.Run(); return; }
 if (args.Contains("--dpi-scroll")) { LumaLauncher.Tests.DpiScrollBench.Run(); return; }
 LumaLauncher.Tests.HighlightTests.Run();
+LumaLauncher.Tests.MotionTests.VerifySpring();
 LumaLauncher.Tests.ReleaseRegressionTests.Run();
 await LumaLauncher.Tests.ReleaseRegressionTests.RunSearchAsync();
 await LumaLauncher.Tests.MimoRegressionTests.RunAsync();

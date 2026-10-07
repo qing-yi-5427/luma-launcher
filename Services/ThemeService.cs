@@ -10,10 +10,12 @@ public static class ThemeService
     public const string Dusk = "Dusk";
     public const string Paper = "Paper";
     public const string Sky = "Sky";
+    public const string AppleLight = "AppleLight";
+    public const string AppleDark = "AppleDark";
 
     private static string _requestedTheme = Auto;
-    private static string _dayTheme = Paper;
-    private static string _nightTheme = InkTeal;
+    private static string _dayTheme = AppleLight;
+    private static string _nightTheme = AppleDark;
 
     public static void StartFollowingSystem() => Microsoft.Win32.SystemEvents.UserPreferenceChanged += PreferenceChanged;
     public static void StopFollowingSystem() => Microsoft.Win32.SystemEvents.UserPreferenceChanged -= PreferenceChanged;
@@ -100,19 +102,37 @@ public static class ThemeService
         Accent: "#FF0B7BC4",
         AccentSoft: "#220B7BC4");
 
+    // Opaque enough to remain readable on WPF's layered window. These are
+    // translucent surfaces, not a claim of live desktop backdrop blur.
+    private static readonly Palette AppleLightPalette = new(
+        Window: "#F8F4F6FA", Panel: "#FFF9FAFC", Hover: "#FFE9EDF5",
+        Selected: "#FFDDE8F8", Text: "#FF1D2430", Muted: "#FF596477",
+        Faint: "#FF5D687B", Stroke: "#FFD7DEE9", Accent: "#FF2166C5",
+        AccentSoft: "#242166C5");
+
+    private static readonly Palette AppleDarkPalette = new(
+        Window: "#F51C2029", Panel: "#FF292E3A", Hover: "#FF353B49",
+        Selected: "#FF31496A", Text: "#FFF6F8FC", Muted: "#FFB7C1D0",
+        Faint: "#FF92A0B3", Stroke: "#FF454C5A", Accent: "#FF91BAFF",
+        AccentSoft: "#328AB9FF");
+
     private static readonly IReadOnlyDictionary<string, Palette> Palettes =
         new Dictionary<string, Palette>(StringComparer.OrdinalIgnoreCase)
         {
             [InkTeal] = InkTealPalette,
             [Dusk] = DuskPalette,
             [Paper] = PaperPalette,
-            [Sky] = SkyPalette
+            [Sky] = SkyPalette,
+            [AppleLight] = AppleLightPalette,
+            [AppleDark] = AppleDarkPalette
         };
 
-    private static readonly HashSet<string> DarkIds = new(StringComparer.OrdinalIgnoreCase) { InkTeal, Dusk };
+    private static readonly HashSet<string> DarkIds = new(StringComparer.OrdinalIgnoreCase) { InkTeal, Dusk, AppleDark };
 
     public static readonly (string Id, string Label, bool IsDark)[] Catalog =
     [
+        (AppleLight, "Apple · 浅色", false),
+        (AppleDark, "Apple · 深色", true),
         (InkTeal, "墨青", true),
         (Dusk, "赭暮", true),
         (Paper, "素笺", false),
@@ -156,12 +176,14 @@ public static class ThemeService
             System.Windows.Application.Current.Resources["AccentSoftBrush"] = System.Windows.SystemColors.ControlBrush;
             System.Windows.Application.Current.Resources["DangerBrush"] = System.Windows.SystemColors.WindowTextBrush;
             System.Windows.Application.Current.Resources["SuccessBrush"] = System.Windows.SystemColors.WindowTextBrush;
+            System.Windows.Application.Current.Resources["HairlineBrush"] = System.Windows.SystemColors.WindowTextBrush;
             return;
         }
 
         var effective = ResolveEffectiveTheme(_requestedTheme);
         var palette = Palettes.GetValueOrDefault(effective, InkTealPalette);
         ApplyPalette(palette, DarkIds.Contains(effective));
+        Set("HairlineBrush", DarkIds.Contains(effective) ? "#66FFFFFF" : "#99FFFFFF");
     }
 
     private static bool IsAuto(string theme) =>

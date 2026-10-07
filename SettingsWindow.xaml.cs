@@ -21,8 +21,8 @@ public sealed partial class SettingsWindow : Window
         _originalTheme = settings.Theme;
         _webSearchUrl = settings.WebSearchUrl;
         InitializeComponent();
-        Width = Math.Min(540, Math.Max(320, SystemParameters.WorkArea.Width - 32));
-        Height = Math.Min(760, Math.Max(280, SystemParameters.WorkArea.Height - 32));
+        Width = Math.Min(660, Math.Max(400, SystemParameters.WorkArea.Width - 32));
+        Height = Math.Min(740, Math.Max(320, SystemParameters.WorkArea.Height - 32));
         foreach (var (mode, label) in ResultRanker.Options)
             ResultSortBox.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = label, Tag = mode });
         LoadControls(settings);
@@ -138,8 +138,8 @@ public sealed partial class SettingsWindow : Window
         var settings = _loadedSettings.Copy();
         settings.Hotkey = hotkey;
         settings.Theme = ThemeBox.SelectedValue as string ?? "Auto";
-        settings.DayTheme = DayThemeBox.SelectedValue as string ?? "Paper";
-        settings.NightTheme = NightThemeBox.SelectedValue as string ?? "InkTeal";
+        settings.DayTheme = DayThemeBox.SelectedValue as string ?? ThemeService.AppleLight;
+        settings.NightTheme = NightThemeBox.SelectedValue as string ?? ThemeService.AppleDark;
         settings.Density = DensityBox.SelectedValue as string ?? "Comfortable";
         settings.StartWithWindows = StartupBox.IsChecked == true;
         settings.EverythingPathMode = everythingMode;
@@ -223,8 +223,8 @@ public sealed partial class SettingsWindow : Window
         if (ThemeBox.SelectedValue is not string theme)
             return;
         ThemeService.ConfigureAutoPair(
-            DayThemeBox?.SelectedValue as string ?? "Paper",
-            NightThemeBox?.SelectedValue as string ?? "InkTeal");
+            DayThemeBox?.SelectedValue as string ?? ThemeService.AppleLight,
+            NightThemeBox?.SelectedValue as string ?? ThemeService.AppleDark);
         ThemeService.Apply(theme);
         UpdateThemeChrome(theme);
     }
@@ -232,8 +232,8 @@ public sealed partial class SettingsWindow : Window
     private void DayThemeBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         ThemeService.ConfigureAutoPair(
-            DayThemeBox.SelectedValue as string ?? "Paper",
-            NightThemeBox?.SelectedValue as string ?? "InkTeal");
+            DayThemeBox.SelectedValue as string ?? ThemeService.AppleLight,
+            NightThemeBox?.SelectedValue as string ?? ThemeService.AppleDark);
         ThemeService.Apply(ThemeBox.SelectedValue as string ?? ThemeService.Auto);
         UpdateThemeChrome(ThemeBox.SelectedValue as string ?? ThemeService.Auto);
     }
@@ -241,8 +241,8 @@ public sealed partial class SettingsWindow : Window
     private void NightThemeBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         ThemeService.ConfigureAutoPair(
-            DayThemeBox?.SelectedValue as string ?? "Paper",
-            NightThemeBox.SelectedValue as string ?? "InkTeal");
+            DayThemeBox?.SelectedValue as string ?? ThemeService.AppleLight,
+            NightThemeBox.SelectedValue as string ?? ThemeService.AppleDark);
         ThemeService.Apply(ThemeBox.SelectedValue as string ?? ThemeService.Auto);
         UpdateThemeChrome(ThemeBox.SelectedValue as string ?? ThemeService.Auto);
     }
@@ -260,6 +260,8 @@ public sealed partial class SettingsWindow : Window
         var effective = ThemeService.ResolveEffectiveTheme(theme);
         var label = effective switch
         {
+            ThemeService.AppleLight => "Apple · 浅色",
+            ThemeService.AppleDark => "Apple · 深色",
             ThemeService.InkTeal => "墨青 · 夜",
             ThemeService.Dusk => "赭暮 · 夜",
             ThemeService.Paper => "素笺 · 日",

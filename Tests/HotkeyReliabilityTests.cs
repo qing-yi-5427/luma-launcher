@@ -59,9 +59,21 @@ internal static class HotkeyReliabilityTests
         var foreground = original;
         var attempts = 0;
         var hides = 0;
+        var succeedNextActivation = false;
         var recovery = new LauncherFocusRecovery(Dispatcher.CurrentDispatcher, () => visible, () => active,
             () => false, () => altHeld, () => foreground,
-            () => { attempts++; return active; }, () => { hides++; visible = false; }, () => now);
+            () =>
+            {
+                attempts++;
+                if (succeedNextActivation)
+                {
+                    succeedNextActivation = false;
+                    active = true;
+                    foreground = launcher;
+                    return true;
+                }
+                return active;
+            }, () => { hides++; visible = false; }, () => now);
 
         recovery.Start(original, launcher, initiallyActive: false);
         now += 150;
@@ -106,6 +118,21 @@ internal static class HotkeyReliabilityTests
         recovery.Tick();
         Check(attempts == 2 && hides == 3 && !recovery.IsRunning,
             "A stopped recovery resurrected the launcher after explicit hide or close");
+
+        visible = true;
+        foreground = original;
+        succeedNextActivation = true;
+        recovery.Start(original, launcher, initiallyActive: false);
+        now += 150;
+        recovery.Tick();
+        Check(attempts == 3 && active, "The controlled focus retry did not succeed");
+        // The user returns to the original app before the next timer tick.
+        active = false;
+        foreground = original;
+        now += 50;
+        recovery.Tick();
+        Check(attempts == 3 && hides == 4 && !recovery.IsRunning,
+            "A successful retry followed by immediate focus loss reclaimed focus again");
     }
 
     private static void Check(bool condition, string message)

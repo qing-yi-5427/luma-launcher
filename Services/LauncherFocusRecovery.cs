@@ -72,6 +72,7 @@ internal sealed class LauncherFocusRecovery
             _retries++;
             _lastRetry = now;
             var activated = _activate();
+            _everActive |= activated;
             DiagnosticsService.Log("hotkey-focus", $"retry={_retries}; activated={activated}");
         }
         else if (action == FocusRecoveryAction.Hide)

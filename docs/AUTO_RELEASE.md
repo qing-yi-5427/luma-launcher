@@ -46,17 +46,21 @@ tags; do not republish an old stable tag as Latest.
 
 ## Manually publishing an already validated binary
 
-For 0.6.0, the self-contained `Luma.exe` and `Luma.exe.sha256` had already been
-validated from source commit `db41f6c`. A draft `v0.6.0` release was created with
-its tag target set to that exact commit, the same two files were attached, and
-the GitHub asset digest was checked against the local SHA-256 and installed EXE.
-Only then was the draft made public as a stable Latest release. This preserves
-the tested binary's provenance even though documentation-only commits follow
-the release source commit.
+For 0.6.0, the self-contained `Luma.exe` and `Luma.exe.sha256` were validated
+from source commit `db41f6c`, and a draft `v0.6.0` release targeted that commit.
+Creating a draft with a **new tag** through the GitHub API or `gh release create`
+can itself emit a tag-push event. It did so for `v0.6.0` (Release workflow run
+`37627067851`), even without a separate `git push` command. That workflow can
+publish or replace assets under the same tag, so an earlier asset-digest check
+is not sufficient evidence for the final public release.
 
-For this manual path, do not push a separate `v*` tag to trigger a second tag
-workflow that rebuilds or replaces the already verified assets. Check the
-release's tag target, file hash and published status before announcing it.
+When manually publishing an already validated binary, inspect Actions for a
+same-tag Release job and stop a redundant publisher before restoring the intended
+assets. Wait for the competing job to finish, then compare the **final** GitHub
+asset digest, `Luma.exe.sha256`, local validated binary and installed EXE. Check
+the tag target and public Latest status after that final verification. The 0.6.0
+release requires this manual final-asset check; documentation-only commits after
+`db41f6c` are not the binary's source commit.
 
 ## Branch rollout
 
